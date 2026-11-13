@@ -1,0 +1,15 @@
+# Android / Gradle / IDE build data
+.gradle/
+**/build/
+local.properties
+.idea/
+*.iml
+*.hprof
+.cxx/
+.externalNativeBuild/
+.DS_Store
+Thumbs.db
+# Signing keys must never be pushed
+*.jks
+*.keystore
+*.p12
