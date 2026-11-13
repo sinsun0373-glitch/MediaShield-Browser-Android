@@ -17,6 +17,13 @@ import java.util.regex.*;
 /** Android WebView-powered browser; not a fork of Brave or Chromium. */
 public class MainActivity extends Activity {
     private WebView web;
+    private View customVideoView;
+    private WebChromeClient.CustomViewCallback videoCallback;
+    private FrameLayout videoContainer;
+    private LinearLayout browserChrome;
+    private TextView shieldButton;
+    private int lastWebError=0;
+
     private EditText urlBox;
     private LinearLayout foundList, downloadsList, root, tools, adPane, bookmarkPane;
     private TextView status;
@@ -38,29 +45,46 @@ public class MainActivity extends Activity {
         adBlocker=new AdBlocker(this);
         fastDownloads=getSharedPreferences("download_settings",MODE_PRIVATE).getBoolean("fast",true);
         root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(Color.rgb(19,24,34));setContentView(root);
-        TextView title=text("◆  Privacy Browser  ·  Media  ·  AdBlock",18);title.setTextColor(0xffe8f0ff);title.setPadding(dp(12),dp(12),0,dp(12));root.addView(title);
-        LinearLayout nav=row();root.addView(nav);
-        addNavButton(nav,"‹",()->{if(web.canGoBack())web.goBack();},38);
-        addNavButton(nav,"›",()->{if(web.canGoForward())web.goForward();},38);
-        urlBox=new EditText(this);urlBox.setSingleLine(true);urlBox.setTextColor(Color.WHITE);urlBox.setHintTextColor(0xff9eabbf);urlBox.setHint("검색어 또는 https:// 주소");urlBox.setTextSize(13);urlBox.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI);nav.addView(urlBox,new LinearLayout.LayoutParams(0,dp(48),1));
-        addNavButton(nav,"이동",this::go,48);
-        addNavButton(nav,"↻",()->{showWeb();web.reload();},38);
-        addNavButton(nav,"★",this::bookmarkCurrent,38);
-        addNavButton(nav,"목록",this::showBookmarks,44);
-        tools=row();root.addView(tools);
-        addButton(tools,"감지 ON",()->{liveScan=!liveScan;Toast.makeText(this,liveScan?"실시간 감지 켜짐":"실시간 감지 꺼짐",Toast.LENGTH_SHORT).show();});
-        addButton(tools,"미디어",()->showMedia());
-        addButton(tools,"받기 목록",()->showDownloads());
-        addButton(tools,"광고차단",this::showAdblock);
-        status=text("광고 차단 ON · 실시간 미디어 감지 ON",12);status.setTextColor(0xffb9c6d9);status.setPadding(dp(12),dp(5),dp(6),dp(6));root.addView(status);
+        // Compact browser chrome: one address bar, one bottom navigation rail.
+        browserChrome=new LinearLayout(this);browserChrome.setOrientation(LinearLayout.VERTICAL);
+        browserChrome.setBackgroundColor(0xff17191f);root.addView(browserChrome);
+        LinearLayout nav=row();nav.setPadding(dp(7),dp(7),dp(7),dp(7));browserChrome.addView(nav);
+        TextView shield=text("◆",18);shield.setTextColor(0xffff663d);shield.setGravity(Gravity.CENTER);
+        nav.addView(shield,new LinearLayout.LayoutParams(dp(40),dp(46)));
+        shield.setOnClickListener(v->showAdblock());
+        urlBox=new EditText(this);urlBox.setSingleLine(true);urlBox.setTextColor(Color.WHITE);
+        urlBox.setSelectAllOnFocus(true);urlBox.setHintTextColor(0xff9eabbf);urlBox.setHint("검색어 또는 주소 입력");
+        urlBox.setTextSize(14);urlBox.setPadding(dp(12),0,dp(6),0);
+        urlBox.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI);
+        urlBox.setBackground(makeRounded(0xff30333a,14));
+        nav.addView(urlBox,new LinearLayout.LayoutParams(0,dp(46),1));
+        urlBox.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_GO);
+        urlBox.setOnEditorActionListener((v,action,event)->{go();return true;});
+        addNavButton(nav,"↻",()->{showWeb();web.reload();},42);
+        addNavButton(nav,"⋮",this::showBrowserMenu,42);
+        tools=row();tools.setBackgroundColor(0xff17191f);
+        status=text("",10);status.setVisibility(View.GONE);
         web=new WebView(this);web.setBackgroundColor(Color.WHITE);
-        WebSettings ws=web.getSettings();ws.setJavaScriptEnabled(true);ws.setDomStorageEnabled(true);ws.setMediaPlaybackRequiresUserGesture(true);ws.setBuiltInZoomControls(true);ws.setDisplayZoomControls(false);ws.setAllowFileAccess(false);ws.setAllowContentAccess(false);ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
+        WebSettings ws=web.getSettings();ws.setJavaScriptEnabled(true);ws.setDomStorageEnabled(true);ws.setMediaPlaybackRequiresUserGesture(false);ws.setBuiltInZoomControls(true);ws.setDisplayZoomControls(false);ws.setAllowFileAccess(false);ws.setAllowContentAccess(false);ws.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         ws.setJavaScriptCanOpenWindowsAutomatically(!adBlocker.isPopupBlockEnabled());
         ws.setSafeBrowsingEnabled(true);
         ws.setSupportMultipleWindows(false);
         android.webkit.CookieManager.getInstance().setAcceptCookie(true);android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(web,false);
         web.setWebChromeClient(new WebChromeClient(){
-            @Override public void onProgressChanged(WebView view,int progress){status.setText("페이지 " + progress + "% · 미디어 " + media.size() + "개 · 광고차단 " + adBlocker.getPageCount() + "건");}
+            @Override public void onProgressChanged(WebView view,int progress){
+                if(progress==100)urlBox.setText(view.getUrl());
+            }
+            @Override public void onShowCustomView(View view,CustomViewCallback callback){
+                if(customVideoView!=null){callback.onCustomViewHidden();return;}
+                customVideoView=view;videoCallback=callback;
+                root.setVisibility(View.GONE);
+                videoContainer=new FrameLayout(MainActivity.this);
+                videoContainer.setBackgroundColor(Color.BLACK);
+                videoContainer.addView(view,new FrameLayout.LayoutParams(-1,-1));
+                addContentView(videoContainer,new ViewGroup.LayoutParams(-1,-1));
+                getWindow().getDecorView().setSystemUiVisibility(5894 | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+            }
+            @Override public void onHideCustomView(){hideVideoFullscreen();}
             @Override public boolean onCreateWindow(WebView view,boolean isDialog,boolean userGesture,android.os.Message resultMsg){return false;}
         });
         web.setWebViewClient(new WebViewClient(){
@@ -79,6 +103,15 @@ public class MainActivity extends Activity {
                 return null;
             }
             @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest request){String u=request.getUrl().toString();if(u.startsWith("http://")||u.startsWith("https://"))return false;return true;}
+            @Override public void onReceivedError(WebView v,WebResourceRequest req,WebResourceError error){
+                if(!req.isForMainFrame())return;
+                lastWebError=error.getErrorCode();
+                if(lastWebError==android.webkit.WebViewClient.ERROR_CONNECT ||
+                   lastWebError==android.webkit.WebViewClient.ERROR_HOST_LOOKUP ||
+                   lastWebError==android.webkit.WebViewClient.ERROR_IO){
+                    Toast.makeText(MainActivity.this,"사이트 연결 실패 · 메뉴에서 외부 브라우저로 열기를 시도하세요",Toast.LENGTH_LONG).show();
+                }
+            }
             @Override public void onReceivedSslError(WebView v,SslErrorHandler h,android.net.http.SslError e){h.cancel();}
         });
         web.setDownloadListener((u,ua,disposition,mime,size)->{
@@ -92,12 +125,70 @@ public class MainActivity extends Activity {
         adPane=new LinearLayout(this);adPane.setOrientation(LinearLayout.VERTICAL);
         bookmarkPane=new LinearLayout(this);bookmarkPane.setOrientation(LinearLayout.VERTICAL);
         root.addView(foundList,new LinearLayout.LayoutParams(-1,0,1));root.addView(downloadsList,new LinearLayout.LayoutParams(-1,0,1));root.addView(adPane,new LinearLayout.LayoutParams(-1,0,1));root.addView(bookmarkPane,new LinearLayout.LayoutParams(-1,0,1));
+        LinearLayout bottom=row();bottom.setBackgroundColor(0xff17191f);
+        bottom.setPadding(dp(5),dp(2),dp(5),dp(5));root.addView(bottom);
+        addBottomButton(bottom,"⌂",()->{showWeb();web.loadUrl("https://www.google.com");});
+        addBottomButton(bottom,"‹",()->{if(web.canGoBack()){showWeb();web.goBack();}});
+        addBottomButton(bottom,"›",()->{if(web.canGoForward()){showWeb();web.goForward();}});
+        addBottomButton(bottom,"▶",this::showMedia);
+        addBottomButton(bottom,"⇩",this::showDownloads);
+        addBottomButton(bottom,"◆",this::showAdblock);
         showWeb(); // Keep settings panes hidden until opened.
         handler.postDelayed(this::tick,1000);
         if(saved!=null){web.restoreState(saved);}else{web.loadUrl("https://www.google.com");}
         handleShare(getIntent());
         if(Build.VERSION.SDK_INT>=33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS")!=android.content.pm.PackageManager.PERMISSION_GRANTED)
             requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"},92);
+    }
+    private android.graphics.drawable.GradientDrawable makeRounded(int color,int radiusDp){
+        android.graphics.drawable.GradientDrawable bg=new android.graphics.drawable.GradientDrawable();
+        bg.setColor(color);bg.setCornerRadius(dp(radiusDp));return bg;
+    }
+    private void addBottomButton(LinearLayout bar,String label,Runnable click){
+        TextView btn=text(label,23);btn.setTextColor(0xffe1e5ed);btn.setGravity(Gravity.CENTER);
+        bar.addView(btn,new LinearLayout.LayoutParams(0,dp(48),1));
+        btn.setOnClickListener(v->click.run());
+    }
+    private void hideVideoFullscreen(){
+        if(customVideoView==null)return;
+        if(videoContainer!=null){videoContainer.removeAllViews();
+            ((ViewGroup)videoContainer.getParent()).removeView(videoContainer);videoContainer=null;}
+        customVideoView=null;root.setVisibility(View.VISIBLE);
+        getWindow().getDecorView().setSystemUiVisibility(0);
+        if(videoCallback!=null){videoCallback.onCustomViewHidden();videoCallback=null;}
+    }
+    private void openExternalBrowser(){
+        String url=web.getUrl();if(!TaskStore.validUrl(url))return;
+        Intent intent=new Intent(Intent.ACTION_VIEW,Uri.parse(url));
+        intent.addCategory(Intent.CATEGORY_BROWSABLE);
+        // Do not let the current app handle its own ACTION_VIEW.
+        intent.setPackage("com.brave.browser");
+        try{startActivity(intent);}catch(Exception e){
+            intent.setPackage(null);
+            try{startActivity(Intent.createChooser(intent,"외부 브라우저로 열기"));}
+            catch(Exception ignored){Toast.makeText(this,"열 수 있는 브라우저가 없습니다",Toast.LENGTH_LONG).show();}
+        }
+    }
+    private void showBrowserMenu(){
+        String[] actions={"현재 사이트 즐겨찾기", "즐겨찾기 목록", "광고 차단 설정", "이 사이트 광고 차단 잠시 끄기", "Brave에서 현재 사이트 열기", "새로고침", "이 브라우저에 관하여"};
+        new AlertDialog.Builder(this).setTitle("MediaShield · 메뉴")
+        .setItems(actions,(d,which)->{
+            switch(which){
+                case 0:bookmarkCurrent();break;
+                case 1:showBookmarks();break;
+                case 2:showAdblock();break;
+                case 3:
+                    String url=web.getUrl();if(!TaskStore.validUrl(url))break;
+                    adBlocker.setSiteAllowed(url,!adBlocker.isSiteAllowed(url));
+                    Toast.makeText(this,adBlocker.isSiteAllowed(url)?"이 사이트 광고 차단 제외":"광고 차단 적용",Toast.LENGTH_SHORT).show();
+                    web.reload();break;
+                case 4:openExternalBrowser();break;
+                case 5:web.reload();break;
+                case 6:new AlertDialog.Builder(this).setTitle("MediaShield Browser 7.0")
+                    .setMessage("Android WebView 기반 독립 브라우저입니다. Brave 공식 앱이 아니며 모든 사이트 및 DRM 영상과 호환되지는 않습니다.\n\n사이트 연결이 끊어지면 네트워크·DNS·사이트 정책 때문일 수도 있습니다.")
+                    .setPositiveButton("확인",null).show();break;
+            }
+        }).show();
     }
     private int dp(int n){return (int)(getResources().getDisplayMetrics().density*n+.5f);}
     private TextView text(String str,int size){TextView v=new TextView(this);v.setText(str);v.setTextSize(size);v.setTextColor(Color.WHITE);return v;}
@@ -304,7 +395,7 @@ public class MainActivity extends Activity {
         if(web!=null&&web.getUrl()!=null)web.reload();
     }
     private EditText field(String hint){EditText e=new EditText(this);e.setTextColor(Color.WHITE);e.setHintTextColor(0xffa5b2c1);e.setHint(hint);e.setSingleLine(true);return e;}
-    @Override public void onBackPressed(){if(web.getVisibility()!=View.VISIBLE){showWeb();return;}if(web.canGoBack()){web.goBack();return;}super.onBackPressed();}
+    @Override public void onBackPressed(){if(customVideoView!=null){hideVideoFullscreen();return;}if(web.getVisibility()!=View.VISIBLE){showWeb();return;}if(web.canGoBack()){web.goBack();return;}super.onBackPressed();}
     @Override protected void onSaveInstanceState(Bundle out){web.saveState(out);super.onSaveInstanceState(out);}
-    @Override protected void onDestroy(){refresh=false;handler.removeCallbacksAndMessages(null);if(web!=null){web.destroy();}if(adBlocker!=null)adBlocker.close();super.onDestroy();}
+    @Override protected void onDestroy(){hideVideoFullscreen();refresh=false;handler.removeCallbacksAndMessages(null);if(web!=null){web.destroy();}if(adBlocker!=null)adBlocker.close();super.onDestroy();}
 }
