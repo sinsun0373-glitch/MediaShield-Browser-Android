@@ -23,6 +23,9 @@ public class MainActivity extends Activity {
     private LinearLayout browserChrome;
     private TextView shieldButton;
     private int lastWebError=0;
+    private String lastFailedUrl="";
+    private String lastErrorDescription="";
+    private boolean mainFrameFailed=false;
 
     private EditText urlBox;
     private LinearLayout foundList, downloadsList, root, tools, adPane, bookmarkPane;
@@ -59,17 +62,18 @@ public class MainActivity extends Activity {
         urlBox.setBackground(makeRounded(0xff30333a,14));
         nav.addView(urlBox,new LinearLayout.LayoutParams(0,dp(46),1));
         urlBox.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_GO);
+        urlBox.setOnFocusChangeListener((v,hasFocus)->{if(hasFocus)urlBox.selectAll();});
         urlBox.setOnEditorActionListener((v,action,event)->{go();return true;});
         addNavButton(nav,"↻",()->{showWeb();web.reload();},42);
         addNavButton(nav,"⋮",this::showBrowserMenu,42);
         tools=row();tools.setBackgroundColor(0xff17191f);
         status=text("",10);status.setVisibility(View.GONE);
         web=new WebView(this);web.setBackgroundColor(Color.WHITE);
-        WebSettings ws=web.getSettings();ws.setJavaScriptEnabled(true);ws.setDomStorageEnabled(true);ws.setMediaPlaybackRequiresUserGesture(false);ws.setBuiltInZoomControls(true);ws.setDisplayZoomControls(false);ws.setAllowFileAccess(false);ws.setAllowContentAccess(false);ws.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
+        WebSettings ws=web.getSettings();ws.setJavaScriptEnabled(true);ws.setDomStorageEnabled(true);ws.setMediaPlaybackRequiresUserGesture(true);ws.setBuiltInZoomControls(true);ws.setDisplayZoomControls(false);ws.setAllowFileAccess(false);ws.setAllowContentAccess(false);ws.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
         ws.setJavaScriptCanOpenWindowsAutomatically(!adBlocker.isPopupBlockEnabled());
         ws.setSafeBrowsingEnabled(true);
         ws.setSupportMultipleWindows(false);
-        android.webkit.CookieManager.getInstance().setAcceptCookie(true);android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(web,false);
+        android.webkit.CookieManager.getInstance().setAcceptCookie(true);android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(web,getSharedPreferences("privacy",MODE_PRIVATE).getBoolean("third_party_cookies",false));
         web.setWebChromeClient(new WebChromeClient(){
             @Override public void onProgressChanged(WebView view,int progress){
                 if(progress==100)urlBox.setText(view.getUrl());
@@ -88,9 +92,10 @@ public class MainActivity extends Activity {
             @Override public boolean onCreateWindow(WebView view,boolean isDialog,boolean userGesture,android.os.Message resultMsg){return false;}
         });
         web.setWebViewClient(new WebViewClient(){
-            @Override public void onPageStarted(WebView v,String u,android.graphics.Bitmap icon){pageUrl=u;adBlocker.resetPageCount();media.clear();urlBox.setText(u);}
+            @Override public void onPageStarted(WebView v,String u,android.graphics.Bitmap icon){pageUrl=u;mainFrameFailed=false;lastWebError=0;adBlocker.resetPageCount();media.clear();urlBox.setText(u);}
             @Override public void onPageFinished(WebView v,String u){
                 pageUrl=u;urlBox.setText(u);
+                if(mainFrameFailed)return;
                 scanDomMedia();
                 if(adBlocker.isEnabled()&&adBlocker.isCosmeticEnabled()&&!adBlocker.isSiteAllowed(u))
                     v.evaluateJavascript(AdBlocker.COSMETIC_JS,null);
@@ -105,12 +110,11 @@ public class MainActivity extends Activity {
             @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest request){String u=request.getUrl().toString();if(u.startsWith("http://")||u.startsWith("https://"))return false;return true;}
             @Override public void onReceivedError(WebView v,WebResourceRequest req,WebResourceError error){
                 if(!req.isForMainFrame())return;
+                mainFrameFailed=true;
                 lastWebError=error.getErrorCode();
-                if(lastWebError==android.webkit.WebViewClient.ERROR_CONNECT ||
-                   lastWebError==android.webkit.WebViewClient.ERROR_HOST_LOOKUP ||
-                   lastWebError==android.webkit.WebViewClient.ERROR_IO){
-                    Toast.makeText(MainActivity.this,"사이트 연결 실패 · 메뉴에서 외부 브라우저로 열기를 시도하세요",Toast.LENGTH_LONG).show();
-                }
+                lastFailedUrl=req.getUrl().toString();
+                lastErrorDescription=String.valueOf(error.getDescription());
+                runOnUiThread(()->showConnectionFailure(lastFailedUrl,lastWebError,lastErrorDescription));
             }
             @Override public void onReceivedSslError(WebView v,SslErrorHandler h,android.net.http.SslError e){h.cancel();}
         });
@@ -158,19 +162,11 @@ public class MainActivity extends Activity {
         if(videoCallback!=null){videoCallback.onCustomViewHidden();videoCallback=null;}
     }
     private void openExternalBrowser(){
-        String url=web.getUrl();if(!TaskStore.validUrl(url))return;
-        Intent intent=new Intent(Intent.ACTION_VIEW,Uri.parse(url));
-        intent.addCategory(Intent.CATEGORY_BROWSABLE);
-        // Do not let the current app handle its own ACTION_VIEW.
-        intent.setPackage("com.brave.browser");
-        try{startActivity(intent);}catch(Exception e){
-            intent.setPackage(null);
-            try{startActivity(Intent.createChooser(intent,"외부 브라우저로 열기"));}
-            catch(Exception ignored){Toast.makeText(this,"열 수 있는 브라우저가 없습니다",Toast.LENGTH_LONG).show();}
-        }
+        String url=web.getUrl();
+        if(TaskStore.validUrl(url))openExternalUrl(url);
     }
     private void showBrowserMenu(){
-        String[] actions={"현재 사이트 즐겨찾기", "즐겨찾기 목록", "광고 차단 설정", "이 사이트 광고 차단 잠시 끄기", "Brave에서 현재 사이트 열기", "새로고침", "이 브라우저에 관하여"};
+        String[] actions={"현재 사이트 즐겨찾기", "즐겨찾기 목록", "광고 차단 설정", "이 사이트 광고 차단 잠시 끄기", "서드파티 쿠키 허용 설정", "Brave에서 현재 사이트 열기", "새로고침", "마지막 연결 오류 정보", "이 브라우저에 관하여"};
         new AlertDialog.Builder(this).setTitle("MediaShield · 메뉴")
         .setItems(actions,(d,which)->{
             switch(which){
@@ -182,13 +178,63 @@ public class MainActivity extends Activity {
                     adBlocker.setSiteAllowed(url,!adBlocker.isSiteAllowed(url));
                     Toast.makeText(this,adBlocker.isSiteAllowed(url)?"이 사이트 광고 차단 제외":"광고 차단 적용",Toast.LENGTH_SHORT).show();
                     web.reload();break;
-                case 4:openExternalBrowser();break;
-                case 5:web.reload();break;
-                case 6:new AlertDialog.Builder(this).setTitle("MediaShield Browser 7.0")
+                case 4:showThirdPartyCookiesSetting();break;
+                case 5:openExternalBrowser();break;
+                case 6:web.reload();break;
+                case 7:showConnectionFailure(lastFailedUrl,lastWebError,lastErrorDescription);break;
+                case 8:new AlertDialog.Builder(this).setTitle("MediaShield Browser 8.0")
                     .setMessage("Android WebView 기반 독립 브라우저입니다. Brave 공식 앱이 아니며 모든 사이트 및 DRM 영상과 호환되지는 않습니다.\n\n사이트 연결이 끊어지면 네트워크·DNS·사이트 정책 때문일 수도 있습니다.")
                     .setPositiveButton("확인",null).show();break;
             }
         }).show();
+    }
+    private void hideKeyboard(){
+        try{((android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE))
+            .hideSoftInputFromWindow(urlBox.getWindowToken(),0);urlBox.clearFocus();}
+        catch(Exception ignored){}
+    }
+    private void showThirdPartyCookiesSetting(){
+        boolean current=getSharedPreferences("privacy",MODE_PRIVATE).getBoolean("third_party_cookies",false);
+        new AlertDialog.Builder(this).setTitle("서드파티 쿠키")
+            .setMessage("일부 로그인 및 영상 임베드에 필요할 수 있으나 사이트 간 추적 위험이 증가합니다.\n\n현재 상태: "+(current?"허용":"차단"))
+            .setPositiveButton(current?"차단":"허용",(d,w)->{
+                boolean enabled=!current;
+                getSharedPreferences("privacy",MODE_PRIVATE).edit().putBoolean("third_party_cookies",enabled).apply();
+                android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(web,enabled);
+                web.reload();
+            })
+            .setNegativeButton("취소",null).show();
+    }
+    private void showConnectionFailure(String failedUrl,int code,String detail){
+        if(failedUrl==null || failedUrl.isEmpty()){
+            new AlertDialog.Builder(this).setTitle("연결 오류 기록 없음")
+                .setMessage("아직 기록된 메인 페이지 연결 오류가 없습니다.")
+                .setPositiveButton("확인",null).show();return;
+        }
+        Uri uri=Uri.parse(failedUrl);
+        String host=uri.getHost()==null?failedUrl:uri.getHost();
+        String explanation="연결 오류 " + code + " · " + detail + "\n\n사이트: " + host +
+            "\n\n연결 재설정은 서버, 통신망, DNS 또는 사이트 정책에서 발생할 수 있습니다. 광고 차단을 꺼도 해결되지 않을 수 있습니다. SSL 인증서 오류는 우회하지 않습니다.";
+        new AlertDialog.Builder(this).setTitle("사이트 연결 실패")
+            .setMessage(explanation)
+            .setPositiveButton("다시 시도",(d,w)->{showWeb();web.loadUrl(failedUrl);})
+            .setNeutralButton("Brave에서 열기",(d,w)->openExternalUrl(failedUrl))
+            .setNegativeButton("광고 차단 예외",(d,w)->{
+                if(TaskStore.validUrl(failedUrl)){
+                    adBlocker.setSiteAllowed(failedUrl,true);
+                    Toast.makeText(this,"이 사이트에서만 광고 차단을 해제했습니다",Toast.LENGTH_SHORT).show();
+                    showWeb();web.loadUrl(failedUrl);
+                }
+            }).show();
+    }
+    private void openExternalUrl(String url){
+        if(!TaskStore.validUrl(url))return;
+        Intent intent=new Intent(Intent.ACTION_VIEW,Uri.parse(url));
+        intent.addCategory(Intent.CATEGORY_BROWSABLE);
+        intent.setPackage("com.brave.browser");
+        try{startActivity(intent);}catch(Exception e){intent.setPackage(null);
+            try{startActivity(Intent.createChooser(intent,"외부 브라우저로 열기"));}
+            catch(Exception ignored){Toast.makeText(this,"열 수 있는 브라우저가 없습니다",Toast.LENGTH_LONG).show();}}
     }
     private int dp(int n){return (int)(getResources().getDisplayMetrics().density*n+.5f);}
     private TextView text(String str,int size){TextView v=new TextView(this);v.setText(str);v.setTextSize(size);v.setTextColor(Color.WHITE);return v;}
@@ -221,9 +267,9 @@ public class MainActivity extends Activity {
         for(String u:links){addButton(list,u,()->{showWeb();web.loadUrl(u);});}
         if(links.isEmpty())list.addView(text("  저장된 주소가 없습니다. 상단 ★ 버튼으로 추가할 수 있습니다.",13));
     }
-    private void clearPanels(){web.setVisibility(View.GONE);foundList.setVisibility(View.GONE);downloadsList.setVisibility(View.GONE);adPane.setVisibility(View.GONE);bookmarkPane.setVisibility(View.GONE);}
+    private void clearPanels(){hideKeyboard();web.setVisibility(View.GONE);foundList.setVisibility(View.GONE);downloadsList.setVisibility(View.GONE);adPane.setVisibility(View.GONE);bookmarkPane.setVisibility(View.GONE);}
     private void showWeb(){clearPanels();web.setVisibility(View.VISIBLE);}
-    private void go(){String u=urlBox.getText().toString().trim();if(u.isEmpty())return;if(!u.startsWith("http://")&&!u.startsWith("https://")){if(u.contains(".")&&!u.contains(" "))u="https://"+u;else u="https://www.google.com/search?q="+Uri.encode(u);}showWeb();web.loadUrl(u);}
+    private void go(){String u=urlBox.getText().toString().trim();if(u.isEmpty())return;hideKeyboard();if(!u.startsWith("http://")&&!u.startsWith("https://")){if(u.contains(".")&&!u.contains(" "))u="https://"+u;else u="https://www.google.com/search?q="+Uri.encode(u);}showWeb();web.loadUrl(u);}
     private boolean looksLikeMedia(String u){
         try {
             Uri uri=Uri.parse(u);
