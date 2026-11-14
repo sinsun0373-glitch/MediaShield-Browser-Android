@@ -131,9 +131,18 @@ public class MainActivity extends Activity {
             @Override public void onReceivedSslError(WebView v,SslErrorHandler h,android.net.http.SslError e){h.cancel();}
         });
         web.setDownloadListener((u,ua,disposition,mime,size)->{
+            if(!TaskStore.validDownloadUrl(u)){
+                Toast.makeText(this,"HTTPS 주소만 다운로드할 수 있습니다",Toast.LENGTH_LONG).show();
+                return;
+            }
             if(looksLikeMedia(u))addMedia(u);
-            if(mime!=null && mime.toLowerCase(Locale.ROOT).contains("mpegurl"))selectHlsQuality(u);
-            else enqueue(u,mime,URLUtil.guessFileName(u,disposition,mime),ua);
+            // A page cannot silently enqueue files; downloading requires a user tap.
+            new AlertDialog.Builder(this).setTitle("파일 다운로드 확인")
+                .setMessage("파일: "+URLUtil.guessFileName(u,disposition,mime)+"\\n사이트에서 다운로드를 요청했습니다. 저장하시겠습니까?")
+                .setPositiveButton("다운로드",(d,w)->{
+                    if(mime!=null && mime.toLowerCase(Locale.ROOT).contains("mpegurl"))selectHlsQuality(u);
+                    else enqueue(u,mime,URLUtil.guessFileName(u,disposition,mime),ua);
+                }).setNegativeButton("취소",null).show();
         });
         root.addView(web,new LinearLayout.LayoutParams(-1,0,1));
         foundList=new LinearLayout(this);foundList.setOrientation(LinearLayout.VERTICAL);
