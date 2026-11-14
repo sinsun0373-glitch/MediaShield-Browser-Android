@@ -20,6 +20,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import javax.net.ssl.HttpsURLConnection;
 import java.nio.charset.StandardCharsets;
 import java.io.ByteArrayOutputStream;
 import java.io.RandomAccessFile;
@@ -132,7 +133,7 @@ public class DownloadService extends Service {
                 boolean done=ParallelRangeDownloader.tryDownload(input,getFilesDir(),id,temp,
                     t.optString("rangeValidator"),
                     connectionUrl->{
-                        HttpURLConnection c=(HttpURLConnection)new URL(connectionUrl).openConnection();
+                        HttpURLConnection c=(HttpsURLConnection)new URL(connectionUrl).openConnection();
                         c.setConnectTimeout(15000);c.setReadTimeout(15000);
                         c.setInstanceFollowRedirects(true);
                         String cookie=t.optString("cookie"),ua=t.optString("ua"),ref=t.optString("referer");
@@ -165,7 +166,7 @@ public class DownloadService extends Service {
             }
             long offset=temp.exists()?temp.length():0;
             URL url=new URL(t.getString("url"));
-            conn=(HttpURLConnection)url.openConnection();
+            conn=(HttpsURLConnection)url.openConnection();
             conn.setInstanceFollowRedirects(true);
             conn.setConnectTimeout(15000);conn.setReadTimeout(10000);
             String cookie=t.optString("cookie"),ua=t.optString("ua"),referer=t.optString("referer");
@@ -312,7 +313,7 @@ public class DownloadService extends Service {
     }
 
     private HttpURLConnection hlsConnection(String url, JSONObject task) throws Exception {
-        HttpURLConnection conn=(HttpURLConnection)new URL(url).openConnection();
+        HttpURLConnection conn=(HttpsURLConnection)new URL(url).openConnection();
         conn.setConnectTimeout(12000);conn.setReadTimeout(18000);
         conn.setInstanceFollowRedirects(true);
         String agent=task.optString("ua"),cookie=task.optString("cookie"),referer=task.optString("referer");

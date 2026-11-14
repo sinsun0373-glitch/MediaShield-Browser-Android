@@ -69,9 +69,9 @@ public class MainActivity extends Activity {
         tools=row();tools.setBackgroundColor(0xff17191f);
         status=text("",10);status.setVisibility(View.GONE);
         web=new WebView(this);web.setBackgroundColor(Color.WHITE);
-        WebSettings ws=web.getSettings();ws.setJavaScriptEnabled(true);ws.setDomStorageEnabled(true);ws.setMediaPlaybackRequiresUserGesture(true);ws.setBuiltInZoomControls(true);ws.setDisplayZoomControls(false);ws.setAllowFileAccess(false);ws.setAllowContentAccess(false);ws.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
+        WebSettings ws=web.getSettings();ws.setJavaScriptEnabled(true);ws.setDomStorageEnabled(true);ws.setMediaPlaybackRequiresUserGesture(true);ws.setBuiltInZoomControls(true);ws.setDisplayZoomControls(false);ws.setAllowFileAccess(false);ws.setAllowContentAccess(false);ws.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         ws.setJavaScriptCanOpenWindowsAutomatically(!adBlocker.isPopupBlockEnabled());
-        ws.setSafeBrowsingEnabled(true);
+        ws.setSafeBrowsingEnabled(true);ws.setAllowFileAccessFromFileURLs(false);ws.setAllowUniversalAccessFromFileURLs(false);ws.setSaveFormData(false);
         ws.setSupportMultipleWindows(false);
         android.webkit.CookieManager.getInstance().setAcceptCookie(true);android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(web,getSharedPreferences("privacy",MODE_PRIVATE).getBoolean("third_party_cookies",false));
         web.setWebChromeClient(new WebChromeClient(){
@@ -342,7 +342,7 @@ public class MainActivity extends Activity {
             }
         },"HLS-quality-check").start();
     }
-    private void enqueue(String u,String mime,String name,String agent){if(!TaskStore.validUrl(u)){Toast.makeText(this,"유효한 HTTP(S) 주소가 아닙니다",Toast.LENGTH_SHORT).show();return;}
+    private void enqueue(String u,String mime,String name,String agent){if(!TaskStore.validDownloadUrl(u)){Toast.makeText(this,"안전을 위해 HTTPS 파일 주소만 다운로드할 수 있습니다",Toast.LENGTH_LONG).show();return;}
         if(isDash(u)){Toast.makeText(this,"DASH(.mpd)는 아직 지원하지 않습니다",Toast.LENGTH_LONG).show();return;}
         if(isHls(u) || "video/mp2t".equals(mime)){
             if(name==null || name.trim().isEmpty()){

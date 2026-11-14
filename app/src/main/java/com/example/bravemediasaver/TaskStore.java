@@ -31,7 +31,7 @@ public final class TaskStore {
         return null;
     }
     public static synchronized String add(Context ctx,String url,String mime,String referer,String cookie,String ua,String suggestedName) {
-        if (!validUrl(url)) return null;
+        if (!validDownloadUrl(url)) return null;
         String name=suggestedName;
         if(name==null || name.trim().isEmpty()) name=URLUtil.guessFileName(url, null, mime);
         name=safeName(name);
@@ -90,6 +90,12 @@ public final class TaskStore {
         if(text==null)return false;
         try { Uri uri=Uri.parse(text);return ("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme())) && uri.getHost()!=null; }
         catch (Exception e) {return false;}
+    }
+    /** Downloads never use unencrypted HTTP; navigation may still accept HTTP addresses. */
+    public static boolean validDownloadUrl(String text) {
+        if (!validUrl(text)) return false;
+        try { return "https".equalsIgnoreCase(Uri.parse(text).getScheme()); }
+        catch (Exception ignored) { return false; }
     }
     public static String safeName(String input) {
         if(input==null) input="media";

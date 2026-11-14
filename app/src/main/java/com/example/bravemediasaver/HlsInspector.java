@@ -3,12 +3,13 @@ package com.example.bravemediasaver;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
+import javax.net.ssl.HttpsURLConnection;
 import java.net.URL;
 
 /** Reads a playlist on a worker thread for user-initiated quality selection. */
 final class HlsInspector {
     static HlsPlaylist load(String url, String agent, String referer, String cookie) throws Exception {
-        HttpURLConnection connection=(HttpURLConnection)new URL(url).openConnection();
+        HttpURLConnection connection=(HttpsURLConnection)new URL(url).openConnection();
         try {
             connection.setConnectTimeout(12000);
             connection.setReadTimeout(16000);
