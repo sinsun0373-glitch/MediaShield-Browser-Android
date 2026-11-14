@@ -187,8 +187,8 @@ public class MainActivity extends Activity {
                     boolean bottom=!getSharedPreferences("appearance",MODE_PRIVATE).getBoolean("bottom_address",false);
                     getSharedPreferences("appearance",MODE_PRIVATE).edit().putBoolean("bottom_address",bottom).apply();
                     setAddressBarBottom(bottom);break;
-                case 2:bookmarkCurrent();break;
-                case 1:showBookmarks();break;
+                case 1:bookmarkCurrent();break;
+                case 2:showBookmarks();break;
                 case 3:showAdblock();break;
                 case 4:
                     String url=web.getUrl();if(!TaskStore.validUrl(url))break;
