@@ -21,6 +21,8 @@ public class MainActivity extends Activity {
     private WebChromeClient.CustomViewCallback videoCallback;
     private FrameLayout videoContainer;
     private LinearLayout browserChrome;
+    private LinearLayout addressRow, bottomBar;
+    private ProgressBar pageProgress;
     private TextView shieldButton;
     private int lastWebError=0;
     private String lastFailedUrl="";
@@ -51,9 +53,15 @@ public class MainActivity extends Activity {
         // Compact browser chrome: one address bar, one bottom navigation rail.
         browserChrome=new LinearLayout(this);browserChrome.setOrientation(LinearLayout.VERTICAL);
         browserChrome.setBackgroundColor(0xff17191f);root.addView(browserChrome);
-        LinearLayout nav=row();nav.setPadding(dp(7),dp(7),dp(7),dp(7));browserChrome.addView(nav);
+        LinearLayout nav=row();addressRow=nav;nav.setPadding(dp(7),dp(7),dp(7),dp(7));browserChrome.addView(nav);
+        pageProgress=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);
+        pageProgress.setMax(100);pageProgress.setVisibility(View.GONE);
+        pageProgress.setProgressTintList(android.content.res.ColorStateList.valueOf(0xfff4512c));
+        browserChrome.addView(pageProgress,new LinearLayout.LayoutParams(-1,dp(2)));
         TextView shield=text("◆",18);shield.setTextColor(0xffff663d);shield.setGravity(Gravity.CENTER);
         nav.addView(shield,new LinearLayout.LayoutParams(dp(40),dp(46)));
+        shieldButton=shield;
+        shield.setContentDescription("개인정보 보호 및 광고 차단 설정");
         shield.setOnClickListener(v->showAdblock());
         urlBox=new EditText(this);urlBox.setSingleLine(true);urlBox.setTextColor(Color.WHITE);
         urlBox.setSelectAllOnFocus(true);urlBox.setHintTextColor(0xff9eabbf);urlBox.setHint("검색어 또는 주소 입력");
@@ -76,7 +84,9 @@ public class MainActivity extends Activity {
         android.webkit.CookieManager.getInstance().setAcceptCookie(true);android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(web,getSharedPreferences("privacy",MODE_PRIVATE).getBoolean("third_party_cookies",false));
         web.setWebChromeClient(new WebChromeClient(){
             @Override public void onProgressChanged(WebView view,int progress){
-                if(progress==100)urlBox.setText(view.getUrl());
+                if(progress==100 && !urlBox.hasFocus() && view.getUrl()!=null)urlBox.setText(view.getUrl());
+                pageProgress.setProgress(progress);
+                pageProgress.setVisibility(progress>=100?View.GONE:View.VISIBLE);
             }
             @Override public void onShowCustomView(View view,CustomViewCallback callback){
                 if(customVideoView!=null){callback.onCustomViewHidden();return;}
@@ -100,6 +110,8 @@ public class MainActivity extends Activity {
                 if(adBlocker.isEnabled()&&adBlocker.isCosmeticEnabled()&&!adBlocker.isSiteAllowed(u))
                     v.evaluateJavascript(AdBlocker.COSMETIC_JS,null);
                 status.setText("미디어 " + media.size() + "개 · 광고/추적 요청 차단 " + adBlocker.getPageCount() + "건");
+                shieldButton.setText(adBlocker.isEnabled()&&!adBlocker.isSiteAllowed(u)?"◆":"◇");
+                shieldButton.setTextColor(adBlocker.isEnabled()&&!adBlocker.isSiteAllowed(u)?0xffff663d:0xff9fa7b2);
             }
             @Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest request){
                 String u=request.getUrl().toString();
@@ -129,7 +141,7 @@ public class MainActivity extends Activity {
         adPane=new LinearLayout(this);adPane.setOrientation(LinearLayout.VERTICAL);
         bookmarkPane=new LinearLayout(this);bookmarkPane.setOrientation(LinearLayout.VERTICAL);
         root.addView(foundList,new LinearLayout.LayoutParams(-1,0,1));root.addView(downloadsList,new LinearLayout.LayoutParams(-1,0,1));root.addView(adPane,new LinearLayout.LayoutParams(-1,0,1));root.addView(bookmarkPane,new LinearLayout.LayoutParams(-1,0,1));
-        LinearLayout bottom=row();bottom.setBackgroundColor(0xff17191f);
+        LinearLayout bottom=row();bottomBar=bottom;bottom.setBackgroundColor(0xff17191f);
         bottom.setPadding(dp(5),dp(2),dp(5),dp(5));root.addView(bottom);
         addBottomButton(bottom,"⌂",()->{showWeb();web.loadUrl("https://www.google.com");});
         addBottomButton(bottom,"‹",()->{if(web.canGoBack()){showWeb();web.goBack();}});
@@ -137,6 +149,7 @@ public class MainActivity extends Activity {
         addBottomButton(bottom,"▶",this::showMedia);
         addBottomButton(bottom,"⇩",this::showDownloads);
         addBottomButton(bottom,"◆",this::showAdblock);
+        setAddressBarBottom(getSharedPreferences("appearance",MODE_PRIVATE).getBoolean("bottom_address",false));
         showWeb(); // Keep settings panes hidden until opened.
         handler.postDelayed(this::tick,1000);
         if(saved!=null){web.restoreState(saved);}else{web.loadUrl("https://www.google.com");}
@@ -166,27 +179,39 @@ public class MainActivity extends Activity {
         if(TaskStore.validUrl(url))openExternalUrl(url);
     }
     private void showBrowserMenu(){
-        String[] actions={"현재 사이트 즐겨찾기", "즐겨찾기 목록", "광고 차단 설정", "이 사이트 광고 차단 잠시 끄기", "서드파티 쿠키 허용 설정", "Brave에서 현재 사이트 열기", "새로고침", "마지막 연결 오류 정보", "이 브라우저에 관하여"};
+        String[] actions={"주소창 위/아래 이동", "현재 사이트 즐겨찾기", "즐겨찾기 목록", "광고 차단 설정", "이 사이트 광고 차단 잠시 끄기", "서드파티 쿠키 허용 설정", "Brave에서 현재 사이트 열기", "새로고침", "마지막 연결 오류 정보", "이 브라우저에 관하여"};
         new AlertDialog.Builder(this).setTitle("MediaShield · 메뉴")
         .setItems(actions,(d,which)->{
             switch(which){
-                case 0:bookmarkCurrent();break;
+                case 0:
+                    boolean bottom=!getSharedPreferences("appearance",MODE_PRIVATE).getBoolean("bottom_address",false);
+                    getSharedPreferences("appearance",MODE_PRIVATE).edit().putBoolean("bottom_address",bottom).apply();
+                    setAddressBarBottom(bottom);break;
+                case 2:bookmarkCurrent();break;
                 case 1:showBookmarks();break;
-                case 2:showAdblock();break;
-                case 3:
+                case 3:showAdblock();break;
+                case 4:
                     String url=web.getUrl();if(!TaskStore.validUrl(url))break;
                     adBlocker.setSiteAllowed(url,!adBlocker.isSiteAllowed(url));
                     Toast.makeText(this,adBlocker.isSiteAllowed(url)?"이 사이트 광고 차단 제외":"광고 차단 적용",Toast.LENGTH_SHORT).show();
                     web.reload();break;
-                case 4:showThirdPartyCookiesSetting();break;
-                case 5:openExternalBrowser();break;
-                case 6:web.reload();break;
-                case 7:showConnectionFailure(lastFailedUrl,lastWebError,lastErrorDescription);break;
-                case 8:new AlertDialog.Builder(this).setTitle("MediaShield Browser 8.0")
+                case 5:showThirdPartyCookiesSetting();break;
+                case 6:openExternalBrowser();break;
+                case 7:web.reload();break;
+                case 8:showConnectionFailure(lastFailedUrl,lastWebError,lastErrorDescription);break;
+                case 9:new AlertDialog.Builder(this).setTitle("MediaShield Browser · 보안 점검 버전")
                     .setMessage("Android WebView 기반 독립 브라우저입니다. Brave 공식 앱이 아니며 모든 사이트 및 DRM 영상과 호환되지는 않습니다.\n\n사이트 연결이 끊어지면 네트워크·DNS·사이트 정책 때문일 수도 있습니다.")
                     .setPositiveButton("확인",null).show();break;
             }
         }).show();
+    }
+    private void setAddressBarBottom(boolean bottom){
+        if(addressRow==null || browserChrome==null || root==null)return;
+        ViewGroup parent=(ViewGroup)addressRow.getParent();
+        if(parent!=null)parent.removeView(addressRow);
+        if(bottom)root.addView(addressRow,new LinearLayout.LayoutParams(-1,dp(60)));
+        else browserChrome.addView(addressRow,0,new LinearLayout.LayoutParams(-1,dp(60)));
+        addressRow.setContentDescription(bottom?"하단 주소창":"상단 주소창");
     }
     private void hideKeyboard(){
         try{((android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE))
