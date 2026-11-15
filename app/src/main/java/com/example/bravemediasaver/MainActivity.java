@@ -293,34 +293,35 @@ public class MainActivity extends Activity {
         if(TaskStore.validUrl(url))openExternalUrl(url);
     }
     private void showBrowserMenu(){
-        String[] actions={"영상 연결 진단", "이 사이트 자동 이동 잠금 켜기/끄기", "이 사이트 영상 호환 모드", "주소창 위/아래 이동", "Chrome 호환 User-Agent 켜기/끄기", "현재 사이트 즐겨찾기", "즐겨찾기 목록", "광고 차단 설정", "이 사이트 광고 차단 잠시 끄기", "서드파티 쿠키 허용 설정", "Brave에서 현재 사이트 열기", "새로고침", "마지막 연결 오류 정보", "이 브라우저에 관하여", "영상 실행 방식 및 내부 플레이어"};
+        String[] actions={"영상 연결 진단", "DNS·HTTPS 직접 검사", "이 사이트 자동 이동 잠금 켜기/끄기", "이 사이트 영상 호환 모드", "주소창 위/아래 이동", "Chrome 호환 User-Agent 켜기/끄기", "현재 사이트 즐겨찾기", "즐겨찾기 목록", "광고 차단 설정", "이 사이트 광고 차단 잠시 끄기", "서드파티 쿠키 허용 설정", "Brave에서 현재 사이트 열기", "새로고침", "마지막 연결 오류 정보", "이 브라우저에 관하여", "영상 실행 방식 및 내부 플레이어"};
         new AlertDialog.Builder(this).setTitle("MediaShield · 메뉴")
         .setItems(actions,(d,which)->{
             switch(which){
                 case 0:showMediaConnectionDiagnostics();break;
-                case 1:toggleNavigationLockForCurrentSite();break;
-                case 2:toggleVideoCompatibilityForCurrentSite();break;
-                case 3:
+                case 1:runNetworkProbe();break;
+                case 2:toggleNavigationLockForCurrentSite();break;
+                case 3:toggleVideoCompatibilityForCurrentSite();break;
+                case 4:
                     boolean bottom=!getSharedPreferences("appearance",MODE_PRIVATE).getBoolean("bottom_address",false);
                     getSharedPreferences("appearance",MODE_PRIVATE).edit().putBoolean("bottom_address",bottom).apply();
                     setAddressBarBottom(bottom);break;
-                case 4:toggleCompatibilityMode();break;
-                case 5:bookmarkCurrent();break;
-                case 6:showBookmarks();break;
-                case 7:showAdblock();break;
-                case 8:
+                case 5:toggleCompatibilityMode();break;
+                case 6:bookmarkCurrent();break;
+                case 7:showBookmarks();break;
+                case 8:showAdblock();break;
+                case 9:
                     String url=web.getUrl();if(!TaskStore.validUrl(url))break;
                     adBlocker.setSiteAllowed(url,!adBlocker.isSiteAllowed(url));
                     Toast.makeText(this,adBlocker.isSiteAllowed(url)?"이 사이트 광고 차단 제외":"광고 차단 적용",Toast.LENGTH_SHORT).show();
                     web.reload();break;
-                case 9:showThirdPartyCookiesSetting();break;
-                case 10:openExternalBrowser();break;
-                case 11:web.reload();break;
-                case 12:showConnectionFailure(lastFailedUrl,lastWebError,lastErrorDescription);break;
-                case 13:new AlertDialog.Builder(this).setTitle("MediaShield Browser · 호환성 테스트")
+                case 10:showThirdPartyCookiesSetting();break;
+                case 11:openExternalBrowser();break;
+                case 12:web.reload();break;
+                case 13:showConnectionFailure(lastFailedUrl,lastWebError,lastErrorDescription);break;
+                case 14:new AlertDialog.Builder(this).setTitle("MediaShield Browser · 호환성 테스트")
                     .setMessage("Android WebView 기반 브라우저이며 Brave의 Chromium/Shield 엔진과 다릅니다. Chrome User-Agent 호환 모드는 웹사이트 식별 정보만 변경하며 서버 연결 문제 해결이나 영상 광고 제거를 보장하지 않습니다.")
                     .setPositiveButton("확인",null).show();break;
-                case 14:showMediaEngineSetting();break;
+                case 15:showMediaEngineSetting();break;
             }
         }).show();
     }
@@ -444,7 +445,7 @@ public class MainActivity extends Activity {
         android.content.pm.PackageInfo pkg=android.webkit.WebView.getCurrentWebViewPackage();
         String engineVersion=pkg==null?"알 수 없음":pkg.versionName;
         String lastFailedHost=siteHostname(lastFailedUrl);
-        return "MediaShield 연결 진단 (v11.2)"+
+        return "MediaShield 연결 진단 (v11.3)"+
             "\n영상 사이트 실행 엔진: MediaShield WebView"+
             "\nBrave 패키지 확인: "+(installedBravePackage()==null?"설치 여부 미확인":installedBravePackage())+
             "\n현재 페이지: "+(pageHost.isEmpty()?"없음":pageHost)+
@@ -477,13 +478,13 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle("영상 연결 진단")
             .setMessage(buildDiagnosticsReport())
             .setPositiveButton("진단 정보 복사",(d,w)->copyDiagnosticsReport())
-            .setNeutralButton("DNS·HTTPS 직접 검사",(d,w)->runNetworkProbe())
+            .setNeutralButton("네트워크 검사",(d,w)->runNetworkProbe())
             .setNegativeButton("닫기",null).show();
     }
     private void runNetworkProbe(){
         Toast.makeText(this,"운영체제 DNS 및 HTTPS 연결 검사 중…",Toast.LENGTH_LONG).show();
         new Thread(()->{
-            StringBuilder result=new StringBuilder("MediaShield 네트워크 직접 검사 (v11.0)\n");
+            StringBuilder result=new StringBuilder("MediaShield 네트워크 직접 검사 (v11.3)\n");
             result.append("이 검사는 WebView가 아닌 Android 네트워크 API를 사용합니다.\n")
                   .append("HTTP 403·404도 연결에 성공했다는 의미일 수 있습니다.\n\n");
             for(String host:new String[]{"njavtv.com","www.youtube.com"}){
@@ -572,7 +573,7 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle("사이트 연결 실패")
             .setMessage(explanation+"\n\n오류 원인을 확인하려면 아래 '진단 정보 복사'를 누르세요.")
             .setPositiveButton("진단 정보 복사",(d,w)->copyDiagnosticsReport())
-            .setNeutralButton("다시 시도",(d,w)->navigateTo(failedUrl))
+            .setNeutralButton("DNS·HTTPS 검사",(d,w)->runNetworkProbe())
             .setNegativeButton("Brave에서 열기",(d,w)->openExternalUrl(failedUrl)).show();
     }
     private String installedBravePackage(){
