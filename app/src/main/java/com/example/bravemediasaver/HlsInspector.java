@@ -11,6 +11,7 @@ final class HlsInspector {
     static HlsPlaylist load(String url, String agent, String referer, String cookie) throws Exception {
         HttpURLConnection connection=(HttpsURLConnection)new URL(url).openConnection();
         try {
+            connection.setInstanceFollowRedirects(false);
             connection.setConnectTimeout(12000);
             connection.setReadTimeout(16000);
             if(agent!=null && !agent.isEmpty())connection.setRequestProperty("User-Agent",agent);

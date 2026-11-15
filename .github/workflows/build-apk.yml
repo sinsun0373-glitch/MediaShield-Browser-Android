@@ -54,6 +54,33 @@ jobs:
             java --add-modules jdk.httpserver -cp build/jvm-test "com.example.bravemediasaver.${test}"
           done
 
+      - name: Security policy checks (fail closed)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          manifest=Path("app/src/main/AndroidManifest.xml").read_text()
+          store=Path("app/src/main/java/com/example/bravemediasaver/TaskStore.java").read_text()
+          service=Path("app/src/main/java/com/example/bravemediasaver/DownloadService.java").read_text()
+          web=Path("app/src/main/java/com/example/bravemediasaver/MainActivity.java").read_text()
+          inspector=Path("app/src/main/java/com/example/bravemediasaver/HlsInspector.java").read_text()
+          assert 'android:usesCleartextTraffic="false"' in manifest
+          assert 'android:allowBackup="false"' in manifest
+          assert 'android:exported="false"' in manifest
+          assert "android.permission.REQUEST_INSTALL_PACKAGES" not in manifest
+          assert "android.permission.QUERY_ALL_PACKAGES" not in manifest
+          assert "android.permission.MANAGE_EXTERNAL_STORAGE" not in manifest
+          assert 't.put("cookie","")' in store
+          assert "validDownloadUrl" in store
+          assert "MIXED_CONTENT_NEVER_ALLOW" in web
+          assert "setAllowUniversalAccessFromFileURLs(false)" in web
+          assert "onReceivedSslError" in web and "h.cancel()" in web
+          assert "setInstanceFollowRedirects(true)" not in service
+          assert "setInstanceFollowRedirects(false)" in inspector
+          print("Static security policy checks passed (not malware certification)")
+          PY
+
       - name: Build installable debug APK
         run: gradle --no-daemon --stacktrace :app:assembleDebug
 

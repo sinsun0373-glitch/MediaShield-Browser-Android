@@ -135,7 +135,8 @@ public class DownloadService extends Service {
                     connectionUrl->{
                         HttpURLConnection c=(HttpsURLConnection)new URL(connectionUrl).openConnection();
                         c.setConnectTimeout(15000);c.setReadTimeout(15000);
-                        c.setInstanceFollowRedirects(true);
+                        // Fail closed on redirects; do not silently forward credentials or fetch arbitrary hosts.
+                        c.setInstanceFollowRedirects(false);
                         String cookie=t.optString("cookie"),ua=t.optString("ua"),ref=t.optString("referer");
                         if(!cookie.isEmpty())c.setRequestProperty("Cookie",cookie);
                         if(!ua.isEmpty())c.setRequestProperty("User-Agent",ua);
@@ -167,7 +168,7 @@ public class DownloadService extends Service {
             long offset=temp.exists()?temp.length():0;
             URL url=new URL(t.getString("url"));
             conn=(HttpsURLConnection)url.openConnection();
-            conn.setInstanceFollowRedirects(true);
+            conn.setInstanceFollowRedirects(false);
             conn.setConnectTimeout(15000);conn.setReadTimeout(10000);
             String cookie=t.optString("cookie"),ua=t.optString("ua"),referer=t.optString("referer");
             if(!cookie.isEmpty())conn.setRequestProperty("Cookie",cookie);
@@ -315,7 +316,7 @@ public class DownloadService extends Service {
     private HttpURLConnection hlsConnection(String url, JSONObject task) throws Exception {
         HttpURLConnection conn=(HttpsURLConnection)new URL(url).openConnection();
         conn.setConnectTimeout(12000);conn.setReadTimeout(18000);
-        conn.setInstanceFollowRedirects(true);
+        conn.setInstanceFollowRedirects(false);
         String agent=task.optString("ua"),cookie=task.optString("cookie"),referer=task.optString("referer");
         if(!agent.isEmpty())conn.setRequestProperty("User-Agent",agent);
         if(!referer.isEmpty())conn.setRequestProperty("Referer",referer);

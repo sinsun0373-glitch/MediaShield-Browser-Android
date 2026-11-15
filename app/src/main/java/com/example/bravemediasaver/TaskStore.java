@@ -42,7 +42,8 @@ public final class TaskStore {
             t.put("kind",(url.matches("(?i).*\\.m3u8(?:[?#].*)?$") || "video/mp2t".equals(mime))?"hls":"file");
             t.put("lastSeq",-1L);t.put("speed",0L);
             t.put("mime",mime==null?"":mime);t.put("referer",validUrl(referer)?referer:"");
-            t.put("cookie",cookie==null?"":cookie);t.put("ua",ua==null?"":ua);
+            // Never persist website authentication cookies in the download queue.
+            t.put("cookie","");t.put("ua",ua==null?"":ua);
             t.put("status","queued");t.put("done",0L);t.put("total",-1L);t.put("error","");
             t.put("created",System.currentTimeMillis());
         } catch(Exception ignored) {}
