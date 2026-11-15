@@ -81,6 +81,18 @@ public final class AdBlocker {
         "(document.head||document.documentElement).appendChild(style);" +
         "})();";
 
+    // Best-effort UI enhancement for SKIPPABLE YouTube ads only.
+    // Does not intercept streaming data, bypass DRM, or claim to remove every video ad.
+    public static final String YOUTUBE_SKIPPABLE_AD_JS = "(function(){"
+        + "if(!/(^|\\\\.)youtube\\\\.com$/.test(location.hostname))return;"
+        + "if(window.__mediaShieldSkipUi)return;window.__mediaShieldSkipUi=true;"
+        + "setInterval(function(){"
+        + "var buttons=document.querySelectorAll('button.ytp-ad-skip-button,button.ytp-ad-skip-button-modern,button.ytp-skip-ad-button,ytm-skip-ad-button button');"
+        + "for(var i=0;i<buttons.length;i++){var b=buttons[i];"
+        + "if(b&&b.getClientRects().length&&b.getAttribute('aria-disabled')!=='true'&&!b.disabled){b.click();break;}}"
+        + "},1500);"
+        + "})();";
+
     private final Context app;
     private final SharedPreferences prefs;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
