@@ -12,13 +12,15 @@ import android.widget.*;
 import org.json.*;
 import java.net.*;
 import javax.net.ssl.HttpsURLConnection;
-import androidx.browser.customtabs.CustomTabsIntent;
+
 import java.util.*;
 import java.util.regex.*;
 
 /** Android WebView-powered browser; not a fork of Brave or Chromium. */
 public class MainActivity extends Activity {
     private WebView web;
+    private LinearLayout playerPane, playbackRow;
+    private VideoView playerView;
     private View customVideoView;
     private WebChromeClient.CustomViewCallback videoCallback;
     private FrameLayout videoContainer;
@@ -137,6 +139,7 @@ public class MainActivity extends Activity {
                 pageUrl=u;urlBox.setText(u);
                 if(mainFrameFailed)return;
                 scanDomMedia();
+                v.evaluateJavascript("(function(){document.querySelectorAll('video').forEach(function(x){x.controls=true;});})();",null);
                 if(adBlocker.isEnabled()&&adBlocker.isCosmeticEnabled()&&!adBlocker.isSiteAllowed(u)){
                     v.evaluateJavascript(AdBlocker.COSMETIC_JS,null);
                     // Only press an already-available skip button on YouTube; no stream URL rewriting.
@@ -156,10 +159,6 @@ public class MainActivity extends Activity {
             @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest request){
                 String target=request.getUrl().toString();
                 if(!target.startsWith("http://") && !target.startsWith("https://"))return true;
-                if(request.isForMainFrame() && shouldRouteMediaToBrave(target)){
-                    runOnUiThread(()->navigateTo(target));
-                    return true;
-                }
                 // Capture only hosts and the first path segment, never full URLs or query tokens.
                 if(request.isForMainFrame() && !request.hasGesture())
                     lastAutomaticNavigation=safeNavigationLabel(pageUrl)+" → "+safeNavigationLabel(target);
@@ -233,13 +232,22 @@ public class MainActivity extends Activity {
         downloadsList=new LinearLayout(this);downloadsList.setOrientation(LinearLayout.VERTICAL);
         adPane=new LinearLayout(this);adPane.setOrientation(LinearLayout.VERTICAL);
         bookmarkPane=new LinearLayout(this);bookmarkPane.setOrientation(LinearLayout.VERTICAL);
+        playerPane=new LinearLayout(this);playerPane.setOrientation(1);playerPane.setBackgroundColor(Color.BLACK);
         root.addView(foundList,new LinearLayout.LayoutParams(-1,0,1));root.addView(downloadsList,new LinearLayout.LayoutParams(-1,0,1));root.addView(adPane,new LinearLayout.LayoutParams(-1,0,1));root.addView(bookmarkPane,new LinearLayout.LayoutParams(-1,0,1));
+        root.addView(playerPane,new LinearLayout.LayoutParams(-1,0,1));
+        playbackRow=row();playbackRow.setBackgroundColor(0xff17191f);
+        addButton(playbackRow,"▶ 재생",()->webPlayback("play"));
+        addButton(playbackRow,"Ⅱ 일시정지",()->webPlayback("pause"));
+        addButton(playbackRow,"■ 정지",()->webPlayback("stop"));
+        root.addView(playbackRow,new LinearLayout.LayoutParams(-1,dp(52)));
+        playbackRow.setVisibility(View.GONE);
         LinearLayout bottom=row();bottomBar=bottom;bottom.setBackgroundColor(0xff17191f);
         bottom.setPadding(dp(5),dp(3),dp(5),dp(5));root.addView(bottom);
         addBottomButton(bottom,"‹",()->{if(web.canGoBack()){showWeb();web.goBack();}});
         addBottomButton(bottom,"›",()->{if(web.canGoForward()){showWeb();web.goForward();}});
         addBottomButton(bottom,"⌂",()->{showWeb();web.loadUrl("https://www.google.com");});
         addBottomButton(bottom,"▶",this::showMedia);
+        addBottomButton(bottom,"⏯",this::togglePlaybackRow);
 
         addBottomButton(bottom,"◆",this::showAdblock);
         setAddressBarBottom(getSharedPreferences("appearance",MODE_PRIVATE).getBoolean("bottom_address",false));
@@ -275,7 +283,7 @@ public class MainActivity extends Activity {
         if(TaskStore.validUrl(url))openExternalUrl(url);
     }
     private void showBrowserMenu(){
-        String[] actions={"영상 연결 진단", "이 사이트 자동 이동 잠금 켜기/끄기", "이 사이트 영상 호환 모드", "주소창 위/아래 이동", "Chrome 호환 User-Agent 켜기/끄기", "현재 사이트 즐겨찾기", "즐겨찾기 목록", "광고 차단 설정", "이 사이트 광고 차단 잠시 끄기", "서드파티 쿠키 허용 설정", "Brave에서 현재 사이트 열기", "새로고침", "마지막 연결 오류 정보", "이 브라우저에 관하여", "YouTube·영상 사이트 실행 엔진"};
+        String[] actions={"영상 연결 진단", "이 사이트 자동 이동 잠금 켜기/끄기", "이 사이트 영상 호환 모드", "주소창 위/아래 이동", "Chrome 호환 User-Agent 켜기/끄기", "현재 사이트 즐겨찾기", "즐겨찾기 목록", "광고 차단 설정", "이 사이트 광고 차단 잠시 끄기", "서드파티 쿠키 허용 설정", "Brave에서 현재 사이트 열기", "새로고침", "마지막 연결 오류 정보", "이 브라우저에 관하여", "영상 실행 방식 및 내부 플레이어"};
         new AlertDialog.Builder(this).setTitle("MediaShield · 메뉴")
         .setItems(actions,(d,which)->{
             switch(which){
@@ -306,93 +314,18 @@ public class MainActivity extends Activity {
             }
         }).show();
     }
-    private boolean isMediaEngineHost(String url){
-        String host=siteHostname(url);
-        return host.equals("youtube.com") || host.endsWith(".youtube.com")
-            || host.equals("youtu.be") || host.equals("youtube-nocookie.com")
-            || host.endsWith(".youtube-nocookie.com")
-            || host.equals("njavtv.com") || host.endsWith(".njavtv.com");
-    }
-    private String mediaEngineMode(){
-        // v11 default launched another app. Prefer an explicitly pinned in-app Brave Custom Tab.
-        return getSharedPreferences("engine",MODE_PRIVATE).getString("media_mode","brave_tab");
-    }
-    private boolean shouldRouteMediaToBrave(String url){
-        return isMediaEngineHost(url) && !"webview".equals(mediaEngineMode());
-    }
-    private String installedBravePackage(){
-        // Package visibility is granted only for these explicit Brave variants in the manifest.
-        for(String candidate:new String[]{"com.brave.browser","com.brave.browser_beta","com.brave.browser_nightly"}){
-            try{
-                getPackageManager().getPackageInfo(candidate,0);
-                return candidate;
-            }catch(android.content.pm.PackageManager.NameNotFoundException ignored){}
-        }
-        return null;
-    }
-    private void showBraveUnavailable(String url,String detail){
-        new AlertDialog.Builder(this).setTitle("Brave 브라우저 확인 필요")
-            .setMessage(detail+"\\n\\nYouTube 앱이나 Chrome으로 자동 전환하지 않습니다. "+
-                "Brave가 설치되어 있지 않거나 해당 실행 방식을 지원하지 않을 수 있습니다. "+
-                "MediaShield 내부 WebView로 열면 영상 광고나 사이트 접속 오류가 다시 발생할 수 있습니다.")
-            .setPositiveButton("내부 WebView에서 열기",(d,w)->{
-                // This is an explicit fallback choice; do not re-route its redirects to Brave.
-                getSharedPreferences("engine",MODE_PRIVATE).edit().putString("media_mode","webview").apply();
-                showWeb();web.loadUrl(url);
-            }).setNegativeButton("취소",null).show();
-    }
-    private void openInBraveCustomTab(String url){
-        if(!TaskStore.validUrl(url))return;
-        String brave=installedBravePackage();
-        if(brave==null){
-            showBraveUnavailable(url,"설치된 Brave 앱의 패키지를 확인하지 못했습니다.");
-            return;
-        }
-        try{
-            CustomTabsIntent tab=new CustomTabsIntent.Builder()
-                .setShowTitle(true).build();
-            // Never leave the package unset: that would launch Chrome, YouTube or a chooser.
-            tab.intent.setPackage(brave);
-            tab.launchUrl(this,Uri.parse(url));
-        }catch(android.content.ActivityNotFoundException | SecurityException error){
-            showBraveUnavailable(url,"Brave 맞춤 탭을 실행할 수 없습니다: "+error.getClass().getSimpleName());
-        }
-    }
     private void navigateTo(String url){
         if(!TaskStore.validUrl(url))return;
-        if(shouldRouteMediaToBrave(url)){
-            if("brave_tab".equals(mediaEngineMode()))openInBraveCustomTab(url);
-            else openExternalUrl(url);
-            return;
-        }
-        showWeb();
-        web.loadUrl(url);
+        showWeb();web.loadUrl(url);
     }
     private void showMediaEngineSetting(){
-        String[] labels={
-            "Brave 앱에서 열기 · 별도 브라우저로 이동",
-            "Brave 맞춤 탭 · MediaShield에서 돌아오기 편리 (기본값)",
-            "MediaShield 내부 WebView · 접속/광고 제한 가능"
-        };
-        String[] values={"brave","brave_tab","webview"};
-        String mode=mediaEngineMode();
-        int selected="brave_tab".equals(mode)?1:"webview".equals(mode)?2:0;
-        new AlertDialog.Builder(this).setTitle("YouTube·영상 사이트 실행 엔진")
-            .setSingleChoiceItems(labels,selected,(d,which)->{
-                getSharedPreferences("engine",MODE_PRIVATE).edit()
-                    .putString("media_mode",values[which]).apply();
-                d.dismiss();
-                Toast.makeText(this,labels[which],Toast.LENGTH_LONG).show();
-                String address=urlBox.getText().toString().trim();
-                if(!isMediaEngineHost(address))address=web.getUrl();
-                if(isMediaEngineHost(address)){
-                    final String target=address;
-                    new AlertDialog.Builder(this).setTitle("바뀐 엔진으로 열까요?")
-                        .setMessage("현재 사이트를 선택한 브라우저 엔진으로 다시 엽니다.")
-                        .setPositiveButton("열기",(dialog,w)->navigateTo(target))
-                        .setNegativeButton("나중에",null).show();
-                }
-            }).setNegativeButton("취소",null).show();
+        new AlertDialog.Builder(this).setTitle("영상 실행 · MediaShield 내부")
+            .setMessage("모든 사이트가 MediaShield 내부에서 열립니다. 다른 브라우저로 자동 이동하지 않습니다. "+
+                "다만 WebView는 Brave 광고 차단 엔진이 아니며 일부 사이트는 연결이나 재생이 제한될 수 있습니다. "+
+                "감지된 직접 영상 주소는 앱내 플레이어로 재생할 수 있습니다.")
+            .setPositiveButton("영상 찾기",(d,w)->showMedia())
+            .setNeutralButton("Brave 수동 열기",(d,w)->openExternalBrowser())
+            .setNegativeButton("닫기",null).show();
     }
     private String siteHostname(String url){
         if(url==null)return "";
@@ -501,8 +434,8 @@ public class MainActivity extends Activity {
         android.content.pm.PackageInfo pkg=android.webkit.WebView.getCurrentWebViewPackage();
         String engineVersion=pkg==null?"알 수 없음":pkg.versionName;
         String lastFailedHost=siteHostname(lastFailedUrl);
-        return "MediaShield 연결 진단 (v11.1)"+
-            "\n영상 사이트 실행 엔진: "+mediaEngineMode()+
+        return "MediaShield 연결 진단 (v11.2)"+
+            "\n영상 사이트 실행 엔진: MediaShield WebView"+
             "\nBrave 패키지 확인: "+(installedBravePackage()==null?"설치 여부 미확인":installedBravePackage())+
             "\n현재 페이지: "+(pageHost.isEmpty()?"없음":pageHost)+
             "\nWebView 버전: "+engineVersion+
@@ -683,7 +616,13 @@ public class MainActivity extends Activity {
         for(String u:links){addButton(list,u,()->navigateTo(u));}
         if(links.isEmpty())list.addView(text("  저장된 주소가 없습니다. 상단 ★ 버튼으로 추가할 수 있습니다.",13));
     }
-    private void clearPanels(){hideKeyboard();web.setVisibility(View.GONE);foundList.setVisibility(View.GONE);downloadsList.setVisibility(View.GONE);adPane.setVisibility(View.GONE);bookmarkPane.setVisibility(View.GONE);}
+    private void clearPanels(){
+        hideKeyboard();web.setVisibility(View.GONE);foundList.setVisibility(View.GONE);
+        downloadsList.setVisibility(View.GONE);adPane.setVisibility(View.GONE);
+        bookmarkPane.setVisibility(View.GONE);playerPane.setVisibility(View.GONE);
+        playbackRow.setVisibility(View.GONE);
+        if(playerView!=null&&playerView.isPlaying())playerView.pause();
+    }
     private void showWeb(){clearPanels();web.setVisibility(View.VISIBLE);}
     private void go(){String u=urlBox.getText().toString().trim();if(u.isEmpty())return;hideKeyboard();if(!u.startsWith("http://")&&!u.startsWith("https://")){if(u.contains(".")&&!u.contains(" "))u="https://"+u;else u="https://www.google.com/search?q="+Uri.encode(u);}navigateTo(u);}
     private boolean looksLikeMedia(String u){
@@ -755,9 +694,81 @@ public class MainActivity extends Activity {
     private void populateMedia(){foundList.removeAllViews();TextView hdr=text("  감지된 미디어 " + media.size()+"개 · HLS 화질 선택 / 라이브 TS 녹화 지원",15);hdr.setPadding(dp(10),dp(12),0,dp(12));foundList.addView(hdr);
         addButton(foundList,"브라우저로 돌아가기",this::showWeb);
         ScrollView scroll=new ScrollView(this);LinearLayout list=new LinearLayout(this);list.setOrientation(1);scroll.addView(list);foundList.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        for(String u:new ArrayList<>(media)){LinearLayout item=row();TextView name=text(Uri.parse(u).getLastPathSegment(),12);name.setMaxLines(2);name.setPadding(dp(8),dp(6),dp(4),dp(6));item.addView(name,new LinearLayout.LayoutParams(0,dp(60),1));
-            if(isDash(u))addButton(item,"DASH 안내",()->Toast.makeText(this,"DASH(.mpd) 저장은 지원하지 않습니다",Toast.LENGTH_LONG).show());
-            else addButton(item,isHls(u)?"화질 선택 / HLS 받기":"다운로드",()->downloadMedia(u));list.addView(item);}
+        for(String u:new ArrayList<>(media)){
+            LinearLayout item=row();
+            String filename=Uri.parse(u).getLastPathSegment();
+            TextView name=text(filename==null?"미디어":filename,12);
+            name.setMaxLines(2);name.setPadding(dp(8),dp(6),dp(4),dp(6));
+            item.addView(name,new LinearLayout.LayoutParams(0,dp(60),1));
+            if(isDash(u))addButton(item,"DASH 미지원",()->Toast.makeText(this,"DASH(.mpd) 재생은 지원하지 않습니다",Toast.LENGTH_LONG).show());
+            else if(isVideoFileCandidate(u))addButton(item,"앱내 재생",()->playNativeVideo(u));
+            addButton(item,isHls(u)?"HLS 받기":"다운로드",()->downloadMedia(u));
+            list.addView(item);
+        }
+    }
+    private void togglePlaybackRow(){
+        if(playerPane!=null&&playerPane.getVisibility()==View.VISIBLE){
+            Toast.makeText(this,"앱내 플레이어 하단의 재생·정지 버튼을 사용하세요",Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if(web.getVisibility()!=View.VISIBLE)showWeb();
+        playbackRow.setVisibility(playbackRow.getVisibility()==View.VISIBLE?View.GONE:View.VISIBLE);
+    }
+    private void webPlayback(String cmd){
+        String operation="play".equals(cmd)?"v.play().catch(function(){});":
+            "pause".equals(cmd)?"v.pause();":"v.pause();v.currentTime=0;";
+        String js="(function(){var n=0;document.querySelectorAll('video').forEach(function(v){try{v.controls=true;"
+            +operation+"n++;}catch(e){}});return n;})()";
+        web.evaluateJavascript(js,value->{
+            if("0".equals(value))Toast.makeText(this,
+                "조작 가능한 영상이 없습니다. 다른 도메인 iframe·DRM 플레이어는 직접 제어할 수 없습니다.",Toast.LENGTH_LONG).show();
+            else Toast.makeText(this,("play".equals(cmd)?"재생":"pause".equals(cmd)?"일시정지":"정지")+" 요청: "+value+"개 영상",Toast.LENGTH_SHORT).show();
+        });
+    }
+    private void stopNativeVideo(){
+        if(playerView!=null){
+            try{playerView.stopPlayback();}catch(Exception ignored){}
+            playerView=null;
+        }
+    }
+    private void playNativeVideo(String url){
+        if(!TaskStore.validDownloadUrl(url)||isDash(url)){
+            Toast.makeText(this,"지원되는 HTTPS 영상 주소가 아닙니다",Toast.LENGTH_LONG).show();
+            return;
+        }
+        stopNativeVideo();clearPanels();
+        playerPane.removeAllViews();playerPane.setVisibility(View.VISIBLE);
+        TextView title=text("MediaShield 영상 플레이어 · 탐색은 영상 터치",13);
+        title.setPadding(dp(8),dp(10),dp(8),dp(10));playerPane.addView(title);
+        playerView=new VideoView(this);
+        playerPane.addView(playerView,new LinearLayout.LayoutParams(-1,0,1));
+        MediaController seek=new MediaController(this);
+        seek.setAnchorView(playerView);playerView.setMediaController(seek);
+        playerView.setOnPreparedListener(mp->{if(playerView!=null){playerView.start();seek.show(4000);}});
+        playerView.setOnErrorListener((mp,what,extra)->{
+            new AlertDialog.Builder(this).setTitle("영상 재생 실패")
+                .setMessage("스트림 형식이나 영상 서버 정책으로 인해 기본 Android 플레이어에서 재생할 수 없습니다. "+
+                    "blob 기반·DRM 영상은 지원하지 않습니다.\n오류: "+what+" / "+extra)
+                .setPositiveButton("확인",null).show();
+            return true;
+        });
+        LinearLayout buttons=row();
+        addButton(buttons,"▶ 재생",()->{if(playerView!=null){playerView.start();seek.show(3000);}});
+        addButton(buttons,"Ⅱ 일시정지",()->{if(playerView!=null&&playerView.isPlaying())playerView.pause();});
+        addButton(buttons,"■ 정지",()->{if(playerView!=null){playerView.pause();playerView.seekTo(0);}});
+        addButton(buttons,"← 웹",()->{stopNativeVideo();showWeb();});
+        playerPane.addView(buttons,new LinearLayout.LayoutParams(-1,dp(55)));
+        HashMap<String,String> headers=new HashMap<>();
+        headers.put("User-Agent",web.getSettings().getUserAgentString());
+        String referer=web.getUrl();
+        if(TaskStore.validUrl(referer))headers.put("Referer",referer);
+        if(siteHostname(url).equals(siteHostname(referer))){
+            String cookie=CookieManager.getInstance().getCookie(url);
+            if(cookie!=null&&!cookie.isEmpty())headers.put("Cookie",cookie);
+        }
+        playerView.setVideoURI(Uri.parse(url),headers);
+        playerView.requestFocus();
+        playerView.start();
     }
     private void downloadMedia(String url) {
         if(isHls(url)) selectHlsQuality(url);
@@ -892,7 +903,7 @@ public class MainActivity extends Activity {
         if(web!=null&&web.getUrl()!=null)web.reload();
     }
     private EditText field(String hint){EditText e=new EditText(this);e.setTextColor(Color.WHITE);e.setHintTextColor(0xffa5b2c1);e.setHint(hint);e.setSingleLine(true);return e;}
-    @Override public void onBackPressed(){if(customVideoView!=null){hideVideoFullscreen();return;}if(web.getVisibility()!=View.VISIBLE){showWeb();return;}if(web.canGoBack()){web.goBack();return;}super.onBackPressed();}
+    @Override public void onBackPressed(){if(customVideoView!=null){hideVideoFullscreen();return;}if(playerPane.getVisibility()==View.VISIBLE){stopNativeVideo();showWeb();return;}if(web.getVisibility()!=View.VISIBLE){showWeb();return;}if(web.canGoBack()){web.goBack();return;}super.onBackPressed();}
     @Override protected void onSaveInstanceState(Bundle out){web.saveState(out);super.onSaveInstanceState(out);}
-    @Override protected void onDestroy(){hideVideoFullscreen();refresh=false;handler.removeCallbacksAndMessages(null);if(web!=null){web.destroy();}if(adBlocker!=null)adBlocker.close();super.onDestroy();}
+    @Override protected void onDestroy(){stopNativeVideo();hideVideoFullscreen();refresh=false;handler.removeCallbacksAndMessages(null);if(web!=null){web.destroy();}if(adBlocker!=null)adBlocker.close();super.onDestroy();}
 }
