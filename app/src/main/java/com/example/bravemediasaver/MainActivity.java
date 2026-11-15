@@ -336,6 +336,8 @@ public class MainActivity extends Activity {
                 "Brave가 설치되어 있지 않거나 해당 실행 방식을 지원하지 않을 수 있습니다. "+
                 "MediaShield 내부 WebView로 열면 영상 광고나 사이트 접속 오류가 다시 발생할 수 있습니다.")
             .setPositiveButton("내부 WebView에서 열기",(d,w)->{
+                // This is an explicit fallback choice; do not re-route its redirects to Brave.
+                getSharedPreferences("engine",MODE_PRIVATE).edit().putString("media_mode","webview").apply();
                 showWeb();web.loadUrl(url);
             }).setNegativeButton("취소",null).show();
     }
