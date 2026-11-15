@@ -69,13 +69,14 @@ public final class AdBlocker {
     };
 
     // Safely targeted, less intrusive than hiding all elements containing "ad".
+    // Only remove clearly labeled ad containers. This does not claim to block in-stream YouTube ads.
     public static final String COSMETIC_JS = "(function(){" +
         "if(document.getElementById('media_browser_hide_ads'))return;" +
         "var css='ins.adsbygoogle,[id^=\\\"div-gpt-ad\\\"]," +
         "[id^=\\\"google_ads_\\\"],[data-ad-client]," +
         "iframe[src*=\\\"doubleclick.net\\\"],iframe[src*=\\\"googlesyndication.com\\\"]," +
         "[class~=\\\"ad-slot\\\"],[class~=\\\"ad-container\\\"]," +
-        "[data-testid=\\\"ad-container\\\"]{display:none!important}';" +
+        "[data-testid=\\\"ad-container\\\"],ytd-display-ad-renderer,ytd-promoted-sparkles-web-renderer,ytm-promoted-video-renderer,ytm-companion-ad-renderer{display:none!important}';" +
         "var style=document.createElement('style');style.id='media_browser_hide_ads';style.textContent=css;" +
         "(document.head||document.documentElement).appendChild(style);" +
         "})();";
