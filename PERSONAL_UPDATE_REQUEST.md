@@ -1,10 +1,9 @@
-# MediaShield Browser v10.2 personal update request
+# MediaShield Browser v10.3 personal update request
 
-Approved source changes:
-- Brave-inspired rounded toolbar and navigation adjustments.
-- Video media network diagnostics including WebView engine version and request host.
-- Only best-effort hiding/skipping skippable YouTube ad UI (not guaranteed in-stream ad removal).
-- Keep HTTPS and TLS validation restrictions; no claim that connection resets are fixed.
+- Move the downloads shortcut (↓) directly to the right of the address field.
+- Remove redundant downloads icon from bottom navigation.
+- Keep other browser UI, playback and security settings unchanged.
+- Existing YouTube ad blocking and video ERR_CONNECTION_RESET are still unresolved and require device-level diagnosis.
 
-This file triggers the personal update workflow, restoring the encrypted signing key from run 43712038023.
-No new signing identity is generated. Security and Play Protect review are not complete.
+Build using the existing encrypted personal signing key from run 43712038023.
+Do not generate new signing identity. This update remains unverified by Play Protect.
