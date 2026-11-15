@@ -1,16 +1,13 @@
-# MediaShield v11.1 personal signed update request
+# MediaShield v11.2 personal signed APK update
 
-Fix a user-observed bug in v11.0: YouTube opened the YouTube app and njavtv.com opened Chrome instead of remaining tied to Brave.
-
-Changes:
-- Remove package-unpinned ACTION_VIEW / Intent.createChooser fallback entirely.
-- Detect Brave stable, beta, or nightly with Android 11+ explicit package visibility.
-- Prefer Brave Custom Tabs for the two problematic domains to keep an app-like return flow.
-- Bind both Custom Tab and explicit Brave app choices to the found Brave package, never hand off silently to Chrome or YouTube.
-- If Brave is unavailable or a pinned launch fails, show a choice to use the existing MediaShield WebView or cancel, without launching a different app.
-- A voluntary WebView fallback persists to prevent reopening the same unavailable Brave workflow.
-- Continue exposing the engine choice and network diagnostic tools.
-- v11.1 debug APK build, pure-Java core tests, security checks and APK signature verification passed in GitHub run 43735316233 (build step tests; personal signed build still required).
-- No claim that WebView's ERR_CONNECTION_RESET or YouTube ad blocking are fixed.
-
-Use existing encrypted personal signing key from bootstrap run 43712038023. Do not create new signing identity. Not Google Play Protect certified.
+Requested fixes after v11.1 user testing:
+- User reports APK transfer interrupted mid-download; remove AndroidX browser dependency, reduce APK size significantly.
+- Never automatically transfer YouTube or video-site URLs to YouTube, Chrome, Brave, or another browser.
+- Keep the browser internal to MediaShield WebView, with manual Brave action explicitly available only in menus.
+- Add browser HTML5 media play, pause, stop controls (best effort; cross-origin iframes can't be controlled by page JS).
+- Add fullscreen video overlay with play, pause, stop, close actions.
+- Add native in-app Android VideoView player for detected direct HTTPS video URLs, with standard seek bar, playback controls, and an exit button.
+- The native player does not bypass DRM or guarantee support for HLS/DASH; ERR_CONNECTION_RESET and YouTube in-stream ad skipping remain unsolved.
+- Debug APK build, pure-Java tests, security checks and archive/signature checks passed for code commit 8e3947022ec3d69877db329147ce8e76db7fc841 in run 43736853162.
+- Use the established personal signing identity from bootstrap run 43712038023; never generate a new key.
+- Not Google Play Protect certified.
