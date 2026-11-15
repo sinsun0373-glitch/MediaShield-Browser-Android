@@ -1,0 +1,84 @@
+name: Update personal APK with saved signing key
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  personal-update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Restore existing encrypted signing key backup
+        uses: actions/download-artifact@v4
+        with:
+          name: SAVE-THIS-Encrypted-Personal-Key-Backup
+          run-id: 43712038023
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/keybackup
+
+      - name: Decrypt temporary signing key
+        env:
+          STORE_PASS: ${{ secrets.MEDIASHIELD_STORE_PASSWORD || secrets.MEDIASHIELD_KEY_PASSWORD }}
+          BACKUP_PASS: ${{ secrets.MEDIASHIELD_BACKUP_PASSPHRASE || secrets.MEDIASHIELD_STORE_PASSWORD || secrets.MEDIASHIELD_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$STORE_PASS" || -z "$BACKUP_PASS" ]]; then
+            echo "::error::Signing secrets are missing."
+            exit 1
+          fi
+          umask 077
+          ENCRYPTED="$RUNNER_TEMP/keybackup/mediashield-personal.p12.enc"
+          test -s "$ENCRYPTED"
+          printf '%s' "$BACKUP_PASS" | openssl enc -d -aes-256-cbc -salt -pbkdf2 -iter 300000 -pass stdin \
+            -in "$ENCRYPTED" -out "$RUNNER_TEMP/personal-signing.p12"
+          test -s "$RUNNER_TEMP/personal-signing.p12"
+          keytool -list -storetype PKCS12 -keystore "$RUNNER_TEMP/personal-signing.p12" -storepass "$STORE_PASS" -alias mediashield-personal >/dev/null
+          echo "MEDIASHIELD_KEYSTORE_FILE=$RUNNER_TEMP/personal-signing.p12" >> "$GITHUB_ENV"
+
+      - name: Build signed update from current source
+        env:
+          MEDIASHIELD_KEY_ALIAS: mediashield-personal
+          MEDIASHIELD_STORE_PASSWORD: ${{ secrets.MEDIASHIELD_STORE_PASSWORD || secrets.MEDIASHIELD_KEY_PASSWORD }}
+          MEDIASHIELD_KEY_PASSWORD: ${{ secrets.MEDIASHIELD_STORE_PASSWORD || secrets.MEDIASHIELD_KEY_PASSWORD }}
+        shell: bash
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Verify signed update
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/app-release.apk
+          unzip -t "$APK" | tail -n 2
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$APK"
+          sha256sum "$APK" > "$APK.sha256"
+          echo "Not Play Protect approved. WebView compatibility and ad blocking require device testing."
+
+      - name: Upload personal update APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: MediaShield-Personal-Update-APK-Review
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/release/app-release.apk.sha256
+          retention-days: 7
+
+      - name: Delete temporary private key
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/personal-signing.p12"
