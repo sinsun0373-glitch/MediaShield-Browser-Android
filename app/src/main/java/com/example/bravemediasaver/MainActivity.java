@@ -77,6 +77,7 @@ public class MainActivity extends Activity {
         urlBox.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_GO);
         urlBox.setOnFocusChangeListener((v,hasFocus)->{if(hasFocus)urlBox.selectAll();});
         urlBox.setOnEditorActionListener((v,action,event)->{go();return true;});
+        addNavButton(nav,"↓",this::showDownloads,42);
         addNavButton(nav,"⟳",()->{showWeb();web.reload();},42);
         addNavButton(nav,"⋮",this::showBrowserMenu,42);
         tools=row();tools.setBackgroundColor(0xff17191f);
@@ -181,7 +182,7 @@ public class MainActivity extends Activity {
         addBottomButton(bottom,"›",()->{if(web.canGoForward()){showWeb();web.goForward();}});
         addBottomButton(bottom,"⌂",()->{showWeb();web.loadUrl("https://www.google.com");});
         addBottomButton(bottom,"▶",this::showMedia);
-        addBottomButton(bottom,"↓",this::showDownloads);
+
         addBottomButton(bottom,"◆",this::showAdblock);
         setAddressBarBottom(getSharedPreferences("appearance",MODE_PRIVATE).getBoolean("bottom_address",false));
         showWeb(); // Keep settings panes hidden until opened.
