@@ -474,7 +474,7 @@ public class MainActivity extends Activity {
         try {
             Uri u=Uri.parse(url);
             String path=u.getPath();
-            if(path!=null && path.matches("(?i).*\\\\.(mp4|webm|m4v|mov|m3u8|mpd|ts|mp3|m4a)(?:$)"))return true;
+            if(path!=null && path.matches("(?i).*\\.(mp4|webm|m4v|mov|m3u8|mpd|ts|mp3|m4a)(?:$)"))return true;
             return isHls(url) || isDash(url) || url.contains("videoplayback");
         }catch(Exception ignored){return false;}
     }
