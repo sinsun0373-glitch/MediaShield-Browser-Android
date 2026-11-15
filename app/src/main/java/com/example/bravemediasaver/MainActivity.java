@@ -33,6 +33,7 @@ public class MainActivity extends Activity {
     private int mediaErrorCount=0;
     private String originalUserAgent="";
     private boolean compatibilityMode=false;
+    private volatile boolean videoCompatibilityActive=false;
 
     private EditText urlBox;
     private LinearLayout foundList, downloadsList, root, tools, adPane, bookmarkPane;
@@ -115,7 +116,13 @@ public class MainActivity extends Activity {
             @Override public boolean onCreateWindow(WebView view,boolean isDialog,boolean userGesture,android.os.Message resultMsg){return false;}
         });
         web.setWebViewClient(new WebViewClient(){
-            @Override public void onPageStarted(WebView v,String u,android.graphics.Bitmap icon){pageUrl=u;mainFrameFailed=false;lastWebError=0;adBlocker.resetPageCount();media.clear();urlBox.setText(u);}
+            @Override public void onPageStarted(WebView v,String u,android.graphics.Bitmap icon){
+                pageUrl=u;mainFrameFailed=false;lastWebError=0;adBlocker.resetPageCount();media.clear();
+                videoCompatibilityActive=isVideoCompatibilityEnabled(u);
+                boolean globalCookies=getSharedPreferences("privacy",MODE_PRIVATE).getBoolean("third_party_cookies",false);
+                android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(v,globalCookies || videoCompatibilityActive);
+                if(!urlBox.hasFocus())urlBox.setText(u);
+            }
             @Override public void onPageFinished(WebView v,String u){
                 pageUrl=u;urlBox.setText(u);
                 if(mainFrameFailed)return;
@@ -132,7 +139,7 @@ public class MainActivity extends Activity {
             }
             @Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest request){
                 String u=request.getUrl().toString();
-                if(adBlocker.shouldBlock(u,pageUrl,request.isForMainFrame()))return adBlocker.blankResponse();
+                if(!videoCompatibilityActive && adBlocker.shouldBlock(u,pageUrl,request.isForMainFrame()))return adBlocker.blankResponse();
                 if(liveScan&&looksLikeMedia(u))runOnUiThread(()->addMedia(u));
                 return null;
             }
@@ -217,33 +224,76 @@ public class MainActivity extends Activity {
         if(TaskStore.validUrl(url))openExternalUrl(url);
     }
     private void showBrowserMenu(){
-        String[] actions={"영상 연결 진단", "주소창 위/아래 이동", "Chrome 호환 User-Agent 켜기/끄기", "현재 사이트 즐겨찾기", "즐겨찾기 목록", "광고 차단 설정", "이 사이트 광고 차단 잠시 끄기", "서드파티 쿠키 허용 설정", "Brave에서 현재 사이트 열기", "새로고침", "마지막 연결 오류 정보", "이 브라우저에 관하여"};
+        String[] actions={"영상 연결 진단", "이 사이트 영상 호환 모드", "주소창 위/아래 이동", "Chrome 호환 User-Agent 켜기/끄기", "현재 사이트 즐겨찾기", "즐겨찾기 목록", "광고 차단 설정", "이 사이트 광고 차단 잠시 끄기", "서드파티 쿠키 허용 설정", "Brave에서 현재 사이트 열기", "새로고침", "마지막 연결 오류 정보", "이 브라우저에 관하여"};
         new AlertDialog.Builder(this).setTitle("MediaShield · 메뉴")
         .setItems(actions,(d,which)->{
             switch(which){
-                case 0:showMediaConnectionDiagnostics();break;
-                case 1:
+                case 0:toggleVideoCompatibilityForCurrentSite();break;
+                case 1:showMediaConnectionDiagnostics();break;
+                case 2:
                     boolean bottom=!getSharedPreferences("appearance",MODE_PRIVATE).getBoolean("bottom_address",false);
                     getSharedPreferences("appearance",MODE_PRIVATE).edit().putBoolean("bottom_address",bottom).apply();
                     setAddressBarBottom(bottom);break;
-                case 2:toggleCompatibilityMode();break;
-                case 3:bookmarkCurrent();break;
-                case 4:showBookmarks();break;
-                case 5:showAdblock();break;
-                case 6:
+                case 3:toggleCompatibilityMode();break;
+                case 4:bookmarkCurrent();break;
+                case 5:showBookmarks();break;
+                case 6:showAdblock();break;
+                case 7:
                     String url=web.getUrl();if(!TaskStore.validUrl(url))break;
                     adBlocker.setSiteAllowed(url,!adBlocker.isSiteAllowed(url));
                     Toast.makeText(this,adBlocker.isSiteAllowed(url)?"이 사이트 광고 차단 제외":"광고 차단 적용",Toast.LENGTH_SHORT).show();
                     web.reload();break;
-                case 7:showThirdPartyCookiesSetting();break;
-                case 8:openExternalBrowser();break;
-                case 9:web.reload();break;
-                case 10:showConnectionFailure(lastFailedUrl,lastWebError,lastErrorDescription);break;
-                case 11:new AlertDialog.Builder(this).setTitle("MediaShield Browser · 호환성 테스트")
+                case 8:showThirdPartyCookiesSetting();break;
+                case 9:openExternalBrowser();break;
+                case 10:web.reload();break;
+                case 11:showConnectionFailure(lastFailedUrl,lastWebError,lastErrorDescription);break;
+                case 12:new AlertDialog.Builder(this).setTitle("MediaShield Browser · 호환성 테스트")
                     .setMessage("Android WebView 기반 브라우저이며 Brave의 Chromium/Shield 엔진과 다릅니다. Chrome User-Agent 호환 모드는 웹사이트 식별 정보만 변경하며 서버 연결 문제 해결이나 영상 광고 제거를 보장하지 않습니다.")
                     .setPositiveButton("확인",null).show();break;
             }
         }).show();
+    }
+    private String siteHostname(String url){
+        if(url==null)return "";
+        try {
+            Uri uri=Uri.parse(url);
+            String host=uri.getHost();
+            return ("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
+                && host!=null?host.toLowerCase(Locale.ROOT):"";
+        }catch(Exception ignored){return "";}
+    }
+    private boolean isVideoCompatibilityEnabled(String url){
+        String host=siteHostname(url);
+        if(host.isEmpty())return false;
+        return getSharedPreferences("video_compat",MODE_PRIVATE)
+            .getStringSet("hosts",Collections.emptySet()).contains(host);
+    }
+    private void toggleVideoCompatibilityForCurrentSite(){
+        String url=web==null?null:web.getUrl();
+        String host=siteHostname(url);
+        if(host.isEmpty()){
+            Toast.makeText(this,"먼저 사이트를 열어주세요",Toast.LENGTH_SHORT).show();return;
+        }
+        boolean enabled=isVideoCompatibilityEnabled(url);
+        String explanation=(enabled?"현재 호환 모드가 켜져 있습니다. 끄시겠습니까?":
+            "이 사이트에서만 광고·추적 요청 차단을 일시 제외하고 영상 임베드용 서드파티 쿠키를 허용합니다. "+
+            "영상 재생에 도움될 수 있지만 이 사이트에서 추적 위험이 증가합니다. "+
+            "다른 사이트에는 적용되지 않으며 연결 오류 해결을 보장하지 않습니다.")+
+            "\n\n대상: "+host;
+        new AlertDialog.Builder(this).setTitle("사이트별 영상 호환 모드")
+            .setMessage(explanation)
+            .setPositiveButton(enabled?"모드 끄기":"모드 켜고 재시도",(d,w)->{
+                android.content.SharedPreferences prefs=getSharedPreferences("video_compat",MODE_PRIVATE);
+                Set<String> hosts=new HashSet<>(prefs.getStringSet("hosts",Collections.emptySet()));
+                if(enabled)hosts.remove(host);else hosts.add(host);
+                prefs.edit().putStringSet("hosts",hosts).apply();
+                videoCompatibilityActive=!enabled;
+                boolean baseCookies=getSharedPreferences("privacy",MODE_PRIVATE).getBoolean("third_party_cookies",false);
+                android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(web,baseCookies || !enabled);
+                showWeb();web.reload();
+            })
+            .setNeutralButton("Brave에서 재생",(d,w)->openExternalUrl(url))
+            .setNegativeButton("취소",null).show();
     }
     private void showMediaConnectionDiagnostics(){
         String page=web==null?"":web.getUrl();
@@ -255,6 +305,7 @@ public class MainActivity extends Activity {
             "\nWebView Chrome 식별 모드: "+(compatibilityMode?"켜짐":"꺼짐")+
             "\n서드파티 쿠키: "+(getSharedPreferences("privacy",MODE_PRIVATE).getBoolean("third_party_cookies",false)?"허용":"차단")+
             "\n광고 차단: "+(adBlocker.isEnabled()?"켜짐":"꺼짐")+
+            "\n사이트별 영상 호환 모드: "+(isVideoCompatibilityEnabled(page)?"켜짐":"꺼짐")+
             "\n감지된 미디어 네트워크 오류: "+mediaErrorCount+"건"+
             "\n최근 미디어 요청 호스트: "+(lastMediaErrorHost.isEmpty()?"기록 없음":lastMediaErrorHost)+
             "\n최근 오류: "+(lastMediaErrorDetail.isEmpty()?"기록 없음":lastMediaErrorDetail)+
@@ -301,7 +352,7 @@ public class MainActivity extends Activity {
             .setPositiveButton(current?"차단":"허용",(d,w)->{
                 boolean enabled=!current;
                 getSharedPreferences("privacy",MODE_PRIVATE).edit().putBoolean("third_party_cookies",enabled).apply();
-                android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(web,enabled);
+                android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(web,enabled || isVideoCompatibilityEnabled(web.getUrl()));
                 web.reload();
             })
             .setNegativeButton("취소",null).show();
@@ -320,13 +371,7 @@ public class MainActivity extends Activity {
             .setMessage(explanation)
             .setPositiveButton("다시 시도",(d,w)->{showWeb();web.loadUrl(failedUrl);})
             .setNeutralButton("Brave에서 열기",(d,w)->openExternalUrl(failedUrl))
-            .setNegativeButton("광고 차단 예외",(d,w)->{
-                if(TaskStore.validUrl(failedUrl)){
-                    adBlocker.setSiteAllowed(failedUrl,true);
-                    Toast.makeText(this,"이 사이트에서만 광고 차단을 해제했습니다",Toast.LENGTH_SHORT).show();
-                    showWeb();web.loadUrl(failedUrl);
-                }
-            }).show();
+            .setNegativeButton("영상 호환 설정",(d,w)->toggleVideoCompatibilityForCurrentSite()).show();
     }
     private void openExternalUrl(String url){
         if(!TaskStore.validUrl(url))return;
