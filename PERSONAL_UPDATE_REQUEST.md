@@ -1,11 +1,10 @@
-# MediaShield Browser personal v10.1 update request
+# MediaShield Browser v10.2 personal update request
 
-Requested changes:
-- Chrome-identification compatibility switch for testing WebView website connection resets.
-- Safe cosmetic hiding of YouTube page advertising elements (not in-stream ads).
-- Keep network security restrictions and existing user-owned personal signing identity.
+Approved source changes:
+- Brave-inspired rounded toolbar and navigation adjustments.
+- Video media network diagnostics including WebView engine version and request host.
+- Only best-effort hiding/skipping skippable YouTube ad UI (not guaranteed in-stream ad removal).
+- Keep HTTPS and TLS validation restrictions; no claim that connection resets are fixed.
 
-This commit triggers a one-time GitHub Actions update build using the encrypted signing backup
-created during workflow run 43712038023. No new identity should be generated.
-
-**Security status:** This app has not been certified by Play Protect. Never override a harmful-app warning.
+This file triggers the personal update workflow, restoring the encrypted signing key from run 43712038023.
+No new signing identity is generated. Security and Play Protect review are not complete.
