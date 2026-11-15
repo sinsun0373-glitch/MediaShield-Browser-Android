@@ -1,12 +1,10 @@
-# MediaShield Browser v10.6 personal update request
+# MediaShield v10.7 personal signed update
 
-Changes:
-- Fix the actual menu mapping bug: item 0 "영상 연결 진단" previously invoked video compatibility, item 1 vice versa.
-- Add a prominent "진단 정보 복사" action directly to the connection failure dialog.
-- Preserve Brave fallback and retry buttons.
-- Capture safe navigation trace (hostname and first path segment only) to compare /ko/ to /dm60/ transitions.
-- Capture gesture-free automatic main-frame navigation requests for diagnostics without exposing full URLs/query tokens.
-- Existing ERR_CONNECTION_RESET(-6) and YouTube in-stream ad blocking remain unresolved pending phone-side diagnostic evidence.
+- Introduce per-site automatic navigation lock for video pages, blocking gesture-free automatic top-level navigation after page settles, including same-host path changes.
+- Enable the lock by default for the user's reported host njavtv.com, with a reversible menu toggle.
+- Keep the earlier video compatibility setting separate; this navigation protection is not disabled by video compatibility.
+- Diagnostics include lock state and both cross-site / same-host automatic navigation block counters.
+- Preserve TLS checks and existing personal APK signing key.
+- This cannot guarantee resolution of ERR_CONNECTION_RESET(-6) when caused by the destination server or network. YouTube in-stream ads are not completely blocked.
 
-Rebuild using the existing encrypted signing backup and signing identity from bootstrap run 43712038023.
-Not certified by Play Protect. Do not create a fresh signing key.
+Use previously encrypted key from run 43712038023, no new signing identity. APK is not Play Protect certified.
