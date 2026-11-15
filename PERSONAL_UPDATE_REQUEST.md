@@ -1,11 +1,10 @@
-# MediaShield Browser v10.4 personal signed update
+# MediaShield Browser v10.5 personal signed update
 
-Changes:
-- Site-scoped playback compatibility switch, user opt-in only.
-- Site-scoped third-party cookies and advertisement rule relaxation to test embedded playback.
-- Brave fallback in connection failure dialog and video compatibility chooser.
-- Keep prior v10.3 Brave-like address/download UI and personal signing identity.
-- YouTube in-stream ad blocking and net::ERR_CONNECTION_RESET(-6) remain unverified on device.
+Requested changes:
+- Address-bar download button now opens an actionable video selection dialog, rather than a queue-only screen.
+- Video first selection filters out images and allows HLS quality choice or direct video URL downloads when supported.
+- Prevent unsolicited automatic cross-origin top-level navigations after site load when popup protection is enabled.
+- Preserve HTTPS-only download restrictions, existing private signing identity, and user-configurable per-site video compatibility.
+- In-stream YouTube advertisements and ERR_CONNECTION_RESET(-6) are NOT confirmed fixed; device testing required.
 
-Trigger the existing-key personal-update workflow. Restore signing key from run 43712038023.
-Do not regenerate a signing identity. No claim of Play Protect certification.
+Trigger signed update via the existing encrypted personal signing-key backup from workflow run 43712038023. Never regenerate a signing identity. Not Play Protect certified.
