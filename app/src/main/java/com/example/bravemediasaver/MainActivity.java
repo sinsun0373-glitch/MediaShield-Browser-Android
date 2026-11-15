@@ -120,6 +120,16 @@ public class MainActivity extends Activity {
                 videoContainer=new FrameLayout(MainActivity.this);
                 videoContainer.setBackgroundColor(Color.BLACK);
                 videoContainer.addView(view,new FrameLayout.LayoutParams(-1,-1));
+                // Always provide an exit control in fullscreen; playback buttons are
+                // best-effort for HTML5 media in the current page only.
+                LinearLayout videoButtons=row();
+                videoButtons.setBackgroundColor(0xcc17191f);
+                addButton(videoButtons,"▶ 재생",()->webPlayback("play"));
+                addButton(videoButtons,"Ⅱ 일시정지",()->webPlayback("pause"));
+                addButton(videoButtons,"■ 정지",()->webPlayback("stop"));
+                addButton(videoButtons,"× 닫기",MainActivity.this::hideVideoFullscreen);
+                FrameLayout.LayoutParams controlsLp=new FrameLayout.LayoutParams(-1,dp(53),Gravity.BOTTOM);
+                videoContainer.addView(videoButtons,controlsLp);
                 addContentView(videoContainer,new ViewGroup.LayoutParams(-1,-1));
                 getWindow().getDecorView().setSystemUiVisibility(5894 | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
             }
