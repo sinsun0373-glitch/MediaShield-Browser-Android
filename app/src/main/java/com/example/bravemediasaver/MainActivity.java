@@ -119,8 +119,12 @@ public class MainActivity extends Activity {
                 pageUrl=u;urlBox.setText(u);
                 if(mainFrameFailed)return;
                 scanDomMedia();
-                if(adBlocker.isEnabled()&&adBlocker.isCosmeticEnabled()&&!adBlocker.isSiteAllowed(u))
+                if(adBlocker.isEnabled()&&adBlocker.isCosmeticEnabled()&&!adBlocker.isSiteAllowed(u)){
                     v.evaluateJavascript(AdBlocker.COSMETIC_JS,null);
+                    // Only press an already-available skip button on YouTube; no stream URL rewriting.
+                    if(u!=null && (u.startsWith("https://www.youtube.com/") || u.startsWith("https://m.youtube.com/")))
+                        v.evaluateJavascript(AdBlocker.YOUTUBE_SKIPPABLE_AD_JS,null);
+                }
                 status.setText("미디어 " + media.size() + "개 · 광고/추적 요청 차단 " + adBlocker.getPageCount() + "건");
                 shieldButton.setText(adBlocker.isEnabled()&&!adBlocker.isSiteAllowed(u)?"◆":"◇");
                 shieldButton.setTextColor(adBlocker.isEnabled()&&!adBlocker.isSiteAllowed(u)?0xffff663d:0xff9fa7b2);
