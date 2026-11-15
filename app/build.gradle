@@ -8,8 +8,8 @@ android {
         applicationId 'com.example.privacymediabrowser'
         minSdk 30
         targetSdk 35
-        versionCode 17
-        versionName '10.7.0-personal'
+        versionCode 18
+        versionName '11.0.0-personal'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
@@ -45,4 +45,9 @@ android {
             }
         }
     }
+}
+
+// Use the installed Brave browser's Chromium engine in optional Custom Tabs.
+dependencies {
+    implementation 'androidx.browser:browser:1.8.0'
 }
