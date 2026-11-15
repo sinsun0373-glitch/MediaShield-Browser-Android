@@ -1,6 +1,10 @@
 name: Update personal APK with saved signing key
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'PERSONAL_UPDATE_REQUEST.md'
 
 permissions:
   contents: read
