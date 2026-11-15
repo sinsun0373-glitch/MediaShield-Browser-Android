@@ -1,7 +1,48 @@
 plugins { id 'com.android.application' }
+
 android {
     namespace 'com.example.bravemediasaver'
     compileSdk 35
-    defaultConfig { applicationId 'com.example.privacymediabrowser'; minSdk 30; targetSdk 35; versionCode 9; versionName '9.0.0-rc1' }
-    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+
+    defaultConfig {
+        applicationId 'com.example.privacymediabrowser'
+        minSdk 30
+        targetSdk 35
+        versionCode 10
+        versionName '10.0.0-personal'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // Production signing is opt-in and fully controlled through GitHub Actions secrets.
+    // Keystore bytes are decoded to a temporary file during workflow execution.
+    def keyPath = System.getenv('MEDIASHIELD_KEYSTORE_FILE')
+    def keyAlias = System.getenv('MEDIASHIELD_KEY_ALIAS')
+    def storePass = System.getenv('MEDIASHIELD_STORE_PASSWORD')
+    def keyPass = System.getenv('MEDIASHIELD_KEY_PASSWORD')
+    def signingReady = [keyPath, keyAlias, storePass, keyPass].every { it != null && !it.isEmpty() }
+    if (signingReady) {
+        signingConfigs {
+            personalRelease {
+                storeFile file(keyPath)
+                storePassword storePass
+                keyAlias keyAlias
+                keyPassword keyPass
+                enableV1Signing false
+                enableV2Signing true
+                enableV3Signing true
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            debuggable false
+            if (signingReady) {
+                signingConfig signingConfigs.personalRelease
+            }
+        }
+    }
 }
