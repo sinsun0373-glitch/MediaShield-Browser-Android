@@ -84,7 +84,7 @@ public final class AdBlocker {
     // Best-effort UI enhancement for SKIPPABLE YouTube ads only.
     // Does not intercept streaming data, bypass DRM, or claim to remove every video ad.
     public static final String YOUTUBE_SKIPPABLE_AD_JS = "(function(){"
-        + "if(!/(^|\\\\.)youtube\\\\.com$/.test(location.hostname))return;"
+        + "if(!/(^|[.])youtube[.]com$/.test(location.hostname))return;"
         + "if(window.__mediaShieldSkipUi)return;window.__mediaShieldSkipUi=true;"
         + "setInterval(function(){"
         + "var buttons=document.querySelectorAll('button.ytp-ad-skip-button,button.ytp-ad-skip-button-modern,button.ytp-skip-ad-button,ytm-skip-ad-button button');"
