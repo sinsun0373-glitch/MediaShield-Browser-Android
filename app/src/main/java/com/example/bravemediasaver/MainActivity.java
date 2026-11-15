@@ -11,6 +11,8 @@ import android.webkit.*;
 import android.widget.*;
 import org.json.*;
 import java.net.*;
+import javax.net.ssl.HttpsURLConnection;
+import androidx.browser.customtabs.CustomTabsIntent;
 import java.util.*;
 import java.util.regex.*;
 
@@ -154,6 +156,10 @@ public class MainActivity extends Activity {
             @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest request){
                 String target=request.getUrl().toString();
                 if(!target.startsWith("http://") && !target.startsWith("https://"))return true;
+                if(request.isForMainFrame() && shouldRouteMediaToBrave(target)){
+                    runOnUiThread(()->navigateTo(target));
+                    return true;
+                }
                 // Capture only hosts and the first path segment, never full URLs or query tokens.
                 if(request.isForMainFrame() && !request.hasGesture())
                     lastAutomaticNavigation=safeNavigationLabel(pageUrl)+" → "+safeNavigationLabel(target);
@@ -269,7 +275,7 @@ public class MainActivity extends Activity {
         if(TaskStore.validUrl(url))openExternalUrl(url);
     }
     private void showBrowserMenu(){
-        String[] actions={"영상 연결 진단", "이 사이트 자동 이동 잠금 켜기/끄기", "이 사이트 영상 호환 모드", "주소창 위/아래 이동", "Chrome 호환 User-Agent 켜기/끄기", "현재 사이트 즐겨찾기", "즐겨찾기 목록", "광고 차단 설정", "이 사이트 광고 차단 잠시 끄기", "서드파티 쿠키 허용 설정", "Brave에서 현재 사이트 열기", "새로고침", "마지막 연결 오류 정보", "이 브라우저에 관하여"};
+        String[] actions={"영상 연결 진단", "이 사이트 자동 이동 잠금 켜기/끄기", "이 사이트 영상 호환 모드", "주소창 위/아래 이동", "Chrome 호환 User-Agent 켜기/끄기", "현재 사이트 즐겨찾기", "즐겨찾기 목록", "광고 차단 설정", "이 사이트 광고 차단 잠시 끄기", "서드파티 쿠키 허용 설정", "Brave에서 현재 사이트 열기", "새로고침", "마지막 연결 오류 정보", "이 브라우저에 관하여", "YouTube·영상 사이트 실행 엔진"};
         new AlertDialog.Builder(this).setTitle("MediaShield · 메뉴")
         .setItems(actions,(d,which)->{
             switch(which){
@@ -296,8 +302,70 @@ public class MainActivity extends Activity {
                 case 13:new AlertDialog.Builder(this).setTitle("MediaShield Browser · 호환성 테스트")
                     .setMessage("Android WebView 기반 브라우저이며 Brave의 Chromium/Shield 엔진과 다릅니다. Chrome User-Agent 호환 모드는 웹사이트 식별 정보만 변경하며 서버 연결 문제 해결이나 영상 광고 제거를 보장하지 않습니다.")
                     .setPositiveButton("확인",null).show();break;
+                case 14:showMediaEngineSetting();break;
             }
         }).show();
+    }
+    private boolean isMediaEngineHost(String url){
+        String host=siteHostname(url);
+        return host.equals("youtube.com") || host.endsWith(".youtube.com")
+            || host.equals("youtu.be") || host.equals("youtube-nocookie.com")
+            || host.endsWith(".youtube-nocookie.com")
+            || host.equals("njavtv.com") || host.endsWith(".njavtv.com");
+    }
+    private String mediaEngineMode(){
+        return getSharedPreferences("engine",MODE_PRIVATE).getString("media_mode","brave");
+    }
+    private boolean shouldRouteMediaToBrave(String url){
+        return isMediaEngineHost(url) && !"webview".equals(mediaEngineMode());
+    }
+    private void openInBraveCustomTab(String url){
+        if(!TaskStore.validUrl(url))return;
+        try{
+            CustomTabsIntent tab=new CustomTabsIntent.Builder()
+                .setShowTitle(true).build();
+            tab.intent.setPackage("com.brave.browser");
+            tab.launchUrl(this,Uri.parse(url));
+        }catch(Exception error){
+            Toast.makeText(this,"Brave 맞춤 탭을 열 수 없어 Brave 앱으로 전환합니다",Toast.LENGTH_LONG).show();
+            openExternalUrl(url);
+        }
+    }
+    private void navigateTo(String url){
+        if(!TaskStore.validUrl(url))return;
+        if(shouldRouteMediaToBrave(url)){
+            if("brave_tab".equals(mediaEngineMode()))openInBraveCustomTab(url);
+            else openExternalUrl(url);
+            return;
+        }
+        showWeb();
+        web.loadUrl(url);
+    }
+    private void showMediaEngineSetting(){
+        String[] labels={
+            "Brave 앱에서 열기 · 사이트 호환성과 광고 차단 우선 (권장)",
+            "Brave 맞춤 탭 · 앱에서 돌아오기 편리 (실험적)",
+            "MediaShield 내부 WebView · 접속/광고 제한 가능"
+        };
+        String[] values={"brave","brave_tab","webview"};
+        String mode=mediaEngineMode();
+        int selected="brave_tab".equals(mode)?1:"webview".equals(mode)?2:0;
+        new AlertDialog.Builder(this).setTitle("YouTube·영상 사이트 실행 엔진")
+            .setSingleChoiceItems(labels,selected,(d,which)->{
+                getSharedPreferences("engine",MODE_PRIVATE).edit()
+                    .putString("media_mode",values[which]).apply();
+                d.dismiss();
+                Toast.makeText(this,labels[which],Toast.LENGTH_LONG).show();
+                String address=urlBox.getText().toString().trim();
+                if(!isMediaEngineHost(address))address=web.getUrl();
+                if(isMediaEngineHost(address)){
+                    final String target=address;
+                    new AlertDialog.Builder(this).setTitle("바뀐 엔진으로 열까요?")
+                        .setMessage("현재 사이트를 선택한 브라우저 엔진으로 다시 엽니다.")
+                        .setPositiveButton("열기",(dialog,w)->navigateTo(target))
+                        .setNegativeButton("나중에",null).show();
+                }
+            }).setNegativeButton("취소",null).show();
     }
     private String siteHostname(String url){
         if(url==null)return "";
@@ -406,7 +474,8 @@ public class MainActivity extends Activity {
         android.content.pm.PackageInfo pkg=android.webkit.WebView.getCurrentWebViewPackage();
         String engineVersion=pkg==null?"알 수 없음":pkg.versionName;
         String lastFailedHost=siteHostname(lastFailedUrl);
-        return "MediaShield 연결 진단 (v10.7)"+
+        return "MediaShield 연결 진단 (v11.0)"+
+            "\n영상 사이트 실행 엔진: "+mediaEngineMode()+
             "\n현재 페이지: "+(pageHost.isEmpty()?"없음":pageHost)+
             "\nWebView 버전: "+engineVersion+
             "\nChrome 식별 모드: "+(compatibilityMode?"켜짐":"꺼짐")+
@@ -437,7 +506,48 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle("영상 연결 진단")
             .setMessage(buildDiagnosticsReport())
             .setPositiveButton("진단 정보 복사",(d,w)->copyDiagnosticsReport())
+            .setNeutralButton("DNS·HTTPS 직접 검사",(d,w)->runNetworkProbe())
             .setNegativeButton("닫기",null).show();
+    }
+    private void runNetworkProbe(){
+        Toast.makeText(this,"운영체제 DNS 및 HTTPS 연결 검사 중…",Toast.LENGTH_LONG).show();
+        new Thread(()->{
+            StringBuilder result=new StringBuilder("MediaShield 네트워크 직접 검사 (v11.0)\n");
+            result.append("이 검사는 WebView가 아닌 Android 네트워크 API를 사용합니다.\n")
+                  .append("HTTP 403·404도 연결에 성공했다는 의미일 수 있습니다.\n\n");
+            for(String host:new String[]{"njavtv.com","www.youtube.com"}){
+                result.append(host).append("\n");
+                try{
+                    InetAddress[] addresses=InetAddress.getAllByName(host);
+                    result.append("  DNS: 성공 (").append(addresses.length).append("개 주소)\n");
+                }catch(Exception e){
+                    result.append("  DNS: 실패 · ").append(e.getClass().getSimpleName()).append("\n");
+                }
+                HttpsURLConnection connection=null;
+                try{
+                    URL url=new URL("https://"+host+"/");
+                    connection=(HttpsURLConnection)url.openConnection();
+                    connection.setRequestMethod("HEAD");
+                    connection.setConnectTimeout(6000);
+                    connection.setReadTimeout(6000);
+                    connection.setInstanceFollowRedirects(false);
+                    int code=connection.getResponseCode();
+                    result.append("  HTTPS: 응답 ").append(code).append("\n");
+                }catch(Exception e){
+                    result.append("  HTTPS: 실패 · ").append(e.getClass().getSimpleName())
+                          .append(" · ").append(e.getMessage()==null?"설명 없음":e.getMessage()).append("\n");
+                }finally{if(connection!=null)connection.disconnect();}
+                result.append("\n");
+            }
+            String report=result.toString();
+            runOnUiThread(()->new AlertDialog.Builder(this).setTitle("직접 연결 검사 결과")
+                .setMessage(report)
+                .setPositiveButton("결과 복사",(d,w)->{
+                    android.content.ClipboardManager cb=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                    cb.setPrimaryClip(ClipData.newPlainText("MediaShield Network Test",report));
+                    Toast.makeText(this,"검사 결과 복사 완료",Toast.LENGTH_SHORT).show();
+                }).setNegativeButton("닫기",null).show());
+        },"MediaShieldNetworkProbe").start();
     }
     /** The UA toggle only changes identification: it is not a network bypass or another browser engine. */
     private void applyUserAgentMode(){
@@ -491,7 +601,7 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle("사이트 연결 실패")
             .setMessage(explanation+"\n\n오류 원인을 확인하려면 아래 '진단 정보 복사'를 누르세요.")
             .setPositiveButton("진단 정보 복사",(d,w)->copyDiagnosticsReport())
-            .setNeutralButton("다시 시도",(d,w)->{showWeb();web.loadUrl(failedUrl);})
+            .setNeutralButton("다시 시도",(d,w)->navigateTo(failedUrl))
             .setNegativeButton("Brave에서 열기",(d,w)->openExternalUrl(failedUrl)).show();
     }
     private void openExternalUrl(String url){
@@ -534,12 +644,12 @@ public class MainActivity extends Activity {
         ScrollView sv=new ScrollView(this);bookmarkPane.addView(sv,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout list=new LinearLayout(this);list.setOrientation(1);sv.addView(list);
         Set<String> links=getSharedPreferences("bookmarks",MODE_PRIVATE).getStringSet("urls",Collections.emptySet());
-        for(String u:links){addButton(list,u,()->{showWeb();web.loadUrl(u);});}
+        for(String u:links){addButton(list,u,()->navigateTo(u));}
         if(links.isEmpty())list.addView(text("  저장된 주소가 없습니다. 상단 ★ 버튼으로 추가할 수 있습니다.",13));
     }
     private void clearPanels(){hideKeyboard();web.setVisibility(View.GONE);foundList.setVisibility(View.GONE);downloadsList.setVisibility(View.GONE);adPane.setVisibility(View.GONE);bookmarkPane.setVisibility(View.GONE);}
     private void showWeb(){clearPanels();web.setVisibility(View.VISIBLE);}
-    private void go(){String u=urlBox.getText().toString().trim();if(u.isEmpty())return;hideKeyboard();if(!u.startsWith("http://")&&!u.startsWith("https://")){if(u.contains(".")&&!u.contains(" "))u="https://"+u;else u="https://www.google.com/search?q="+Uri.encode(u);}showWeb();web.loadUrl(u);}
+    private void go(){String u=urlBox.getText().toString().trim();if(u.isEmpty())return;hideKeyboard();if(!u.startsWith("http://")&&!u.startsWith("https://")){if(u.contains(".")&&!u.contains(" "))u="https://"+u;else u="https://www.google.com/search?q="+Uri.encode(u);}navigateTo(u);}
     private boolean looksLikeMedia(String u){
         try {
             Uri uri=Uri.parse(u);
@@ -696,7 +806,7 @@ public class MainActivity extends Activity {
     private void handleShare(Intent i){if(i==null)return;String raw=null;
         if(Intent.ACTION_SEND.equals(i.getAction()))raw=i.getStringExtra(Intent.EXTRA_TEXT);
         else if(Intent.ACTION_VIEW.equals(i.getAction())&&i.getData()!=null)raw=i.getData().toString();
-        if(raw==null)return;Matcher m=sharedUrl.matcher(raw);if(m.find()){String url=m.group();urlBox.setText(url);if(looksLikeMedia(url)){addMedia(url);showMedia();}else{showWeb();web.loadUrl(url);}}}
+        if(raw==null)return;Matcher m=sharedUrl.matcher(raw);if(m.find()){String url=m.group();urlBox.setText(url);if(looksLikeMedia(url)){addMedia(url);showMedia();}else{navigateTo(url);}}}
     private void showAdblock(){
         clearPanels();adPane.setVisibility(View.VISIBLE);adPane.removeAllViews();
         ScrollView scroll=new ScrollView(this);adPane.addView(scroll,new LinearLayout.LayoutParams(-1,-1));
