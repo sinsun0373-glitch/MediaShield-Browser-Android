@@ -29,19 +29,27 @@ jobs:
 
       - name: Validate user-owned secrets
         env:
-          STORE_PASS: ${{ secrets.MEDIASHIELD_STORE_PASSWORD }}
-          BACKUP_PASS: ${{ secrets.MEDIASHIELD_BACKUP_PASSPHRASE }}
+          STORE_PASS: ${{ secrets.MEDIASHIELD_STORE_PASSWORD || secrets.MEDIASHIELD_KEY_PASSWORD }}
+          BACKUP_PASS: ${{ secrets.MEDIASHIELD_BACKUP_PASSPHRASE || secrets.MEDIASHIELD_STORE_PASSWORD || secrets.MEDIASHIELD_KEY_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ "${#STORE_PASS}" -lt 16 ] || [ "${#BACKUP_PASS}" -lt 20 ]; then
-            echo "::error::Set MEDIASHIELD_STORE_PASSWORD (16+ chars) and MEDIASHIELD_BACKUP_PASSPHRASE (20+ chars) in repo Actions secrets."
+          if [ "${#STORE_PASS}" -lt 16 ]; then
+            echo "::error::Missing or too-short signing secret. Set MEDIASHIELD_STORE_PASSWORD (16+ chars); existing MEDIASHIELD_KEY_PASSWORD can also be used."
             exit 1
+          fi
+          if [ "${#BACKUP_PASS}" -lt 16 ]; then
+            echo "::error::Missing or too-short backup encryption secret. Set MEDIASHIELD_BACKUP_PASSPHRASE (recommended 20+ chars), or use the existing signing secret fallback."
+            exit 1
+          fi
+          echo "Secrets are present and satisfy the minimum length checks (contents never printed)."
+          if [ "${#BACKUP_PASS}" -lt 20 ]; then
+            echo "::warning::For long-term key backups, use a separate MEDIASHIELD_BACKUP_PASSPHRASE of at least 20 chars."
           fi
 
       - name: Generate a local PKCS12 signing key (only once)
         env:
-          STORE_PASS: ${{ secrets.MEDIASHIELD_STORE_PASSWORD }}
+          STORE_PASS: ${{ secrets.MEDIASHIELD_STORE_PASSWORD || secrets.MEDIASHIELD_KEY_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
@@ -53,8 +61,8 @@ jobs:
       - name: Build and verify the personally signed APK
         env:
           MEDIASHIELD_KEY_ALIAS: mediashield-personal
-          MEDIASHIELD_STORE_PASSWORD: ${{ secrets.MEDIASHIELD_STORE_PASSWORD }}
-          MEDIASHIELD_KEY_PASSWORD: ${{ secrets.MEDIASHIELD_STORE_PASSWORD }}
+          MEDIASHIELD_STORE_PASSWORD: ${{ secrets.MEDIASHIELD_STORE_PASSWORD || secrets.MEDIASHIELD_KEY_PASSWORD }}
+          MEDIASHIELD_KEY_PASSWORD: ${{ secrets.MEDIASHIELD_STORE_PASSWORD || secrets.MEDIASHIELD_KEY_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
@@ -68,7 +76,7 @@ jobs:
 
       - name: Encrypt the private key backup separately
         env:
-          BACKUP_PASS: ${{ secrets.MEDIASHIELD_BACKUP_PASSPHRASE }}
+          BACKUP_PASS: ${{ secrets.MEDIASHIELD_BACKUP_PASSPHRASE || secrets.MEDIASHIELD_STORE_PASSWORD || secrets.MEDIASHIELD_KEY_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
@@ -79,7 +87,7 @@ jobs:
           test -s "$RUNNER_TEMP/backup/mediashield-personal.p12.enc"
           cat > "$RUNNER_TEMP/backup/READ_ME.txt" <<'EON'
           KEEP THIS BACKUP: mediashield-personal.p12.enc
-          It is encrypted with MEDIASHIELD_BACKUP_PASSPHRASE you set in GitHub.
+          It is encrypted with MEDIASHIELD_BACKUP_PASSPHRASE when provided, otherwise with your signing password. Preserve the exact password.
           Your signing keystore is separately protected by MEDIASHIELD_STORE_PASSWORD.
           Losing either password or this file prevents use of the same key for updates.
           Do not upload plaintext or decrypted keys to a public GitHub repository.
