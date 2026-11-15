@@ -36,6 +36,9 @@ public class MainActivity extends Activity {
     private volatile boolean videoCompatibilityActive=false;
     private long pageNavigationStartedAt=0;
     private int blockedPopupNavigations=0;
+    private String recentNavigationChange="기록 없음";
+    private String lastAutomaticNavigation="기록 없음";
+    private int sameHostPathChanges=0;
 
     private EditText urlBox;
     private LinearLayout foundList, downloadsList, root, tools, adPane, bookmarkPane;
@@ -119,6 +122,7 @@ public class MainActivity extends Activity {
         });
         web.setWebViewClient(new WebViewClient(){
             @Override public void onPageStarted(WebView v,String u,android.graphics.Bitmap icon){
+                notePageNavigation(pageUrl,u);
                 pageUrl=u;pageNavigationStartedAt=android.os.SystemClock.elapsedRealtime();mainFrameFailed=false;lastWebError=0;adBlocker.resetPageCount();media.clear();
                 videoCompatibilityActive=isVideoCompatibilityEnabled(u);
                 boolean globalCookies=getSharedPreferences("privacy",MODE_PRIVATE).getBoolean("third_party_cookies",false);
@@ -148,6 +152,9 @@ public class MainActivity extends Activity {
             @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest request){
                 String target=request.getUrl().toString();
                 if(!target.startsWith("http://") && !target.startsWith("https://"))return true;
+                // Capture only hosts and the first path segment, never full URLs or query tokens.
+                if(request.isForMainFrame() && !request.hasGesture())
+                    lastAutomaticNavigation=safeNavigationLabel(pageUrl)+" → "+safeNavigationLabel(target);
                 // Pop-under scripts sometimes redirect the current tab after a video starts.
                 // Only intercept automatic cross-site *main-frame* navigations after the page settled.
                 if(request.isForMainFrame() && !request.hasGesture() && adBlocker.isPopupBlockEnabled()
@@ -247,8 +254,8 @@ public class MainActivity extends Activity {
         new AlertDialog.Builder(this).setTitle("MediaShield · 메뉴")
         .setItems(actions,(d,which)->{
             switch(which){
-                case 0:toggleVideoCompatibilityForCurrentSite();break;
-                case 1:showMediaConnectionDiagnostics();break;
+                case 0:showMediaConnectionDiagnostics();break;
+                case 1:toggleVideoCompatibilityForCurrentSite();break;
                 case 2:
                     boolean bottom=!getSharedPreferences("appearance",MODE_PRIVATE).getBoolean("bottom_address",false);
                     getSharedPreferences("appearance",MODE_PRIVATE).edit().putBoolean("bottom_address",bottom).apply();
@@ -314,29 +321,66 @@ public class MainActivity extends Activity {
             .setNeutralButton("Brave에서 재생",(d,w)->openExternalUrl(url))
             .setNegativeButton("취소",null).show();
     }
-    private void showMediaConnectionDiagnostics(){
+    private String safeNavigationLabel(String url){
+        if(url==null || url.isEmpty())return "없음";
+        try{
+            Uri parsed=Uri.parse(url);
+            String host=parsed.getHost();
+            if(host==null)return "알 수 없음";
+            java.util.List<String> paths=parsed.getPathSegments();
+            String first=paths==null||paths.isEmpty()?"":paths.get(0);
+            // Do not copy a media ID, query token, or personal URL into diagnostics.
+            if(first.length()>24)first=first.substring(0,24)+"…";
+            return host+(first.isEmpty()?"/":"/"+first+"/…");
+        }catch(Exception ignored){return "알 수 없음";}
+    }
+    private void notePageNavigation(String previous,String current){
+        if(previous==null || previous.isEmpty() || current==null || current.equals(previous))return;
+        String fromHost=siteHostname(previous),toHost=siteHostname(current);
+        if(fromHost.isEmpty()||toHost.isEmpty())return;
+        recentNavigationChange=safeNavigationLabel(previous)+" → "+safeNavigationLabel(current);
+        if(fromHost.equals(toHost)){
+            try{
+                String oldPath=Uri.parse(previous).getPath(),newPath=Uri.parse(current).getPath();
+                if(oldPath!=null && newPath!=null && !oldPath.equals(newPath))sameHostPathChanges++;
+            }catch(Exception ignored){}
+        }
+    }
+    private String buildDiagnosticsReport(){
         String page=web==null?"":web.getUrl();
-        String pageHost=page==null?"":Uri.parse(page).getHost();
+        String pageHost=siteHostname(page);
         android.content.pm.PackageInfo pkg=android.webkit.WebView.getCurrentWebViewPackage();
         String engineVersion=pkg==null?"알 수 없음":pkg.versionName;
-        String message="현재 페이지: "+(pageHost==null?"없음":pageHost)+
+        String lastFailedHost=siteHostname(lastFailedUrl);
+        return "MediaShield 연결 진단 (v10.6)"+
+            "\n현재 페이지: "+(pageHost.isEmpty()?"없음":pageHost)+
             "\nWebView 버전: "+engineVersion+
-            "\nWebView Chrome 식별 모드: "+(compatibilityMode?"켜짐":"꺼짐")+
+            "\nChrome 식별 모드: "+(compatibilityMode?"켜짐":"꺼짐")+
             "\n서드파티 쿠키: "+(getSharedPreferences("privacy",MODE_PRIVATE).getBoolean("third_party_cookies",false)?"허용":"차단")+
             "\n광고 차단: "+(adBlocker.isEnabled()?"켜짐":"꺼짐")+
-            "\n사이트별 영상 호환 모드: "+(isVideoCompatibilityEnabled(page)?"켜짐":"꺼짐")+
-            "\n자동 팝업 이동 차단: "+blockedPopupNavigations+"건"+
-            "\n감지된 미디어 네트워크 오류: "+mediaErrorCount+"건"+
+            "\n영상 호환 모드: "+(isVideoCompatibilityEnabled(page)?"켜짐":"꺼짐")+
+            "\n팝업 자동 이동 차단: "+blockedPopupNavigations+"건"+
+            "\n동일 호스트 경로 변경: "+sameHostPathChanges+"건"+
+            "\n최근 페이지 이동: "+recentNavigationChange+
+            "\n최근 자동 이동 요청: "+lastAutomaticNavigation+
+            "\n메인 페이지 오류 코드: "+lastWebError+
+            "\n오류 발생 호스트: "+(lastFailedHost.isEmpty()?"없음":lastFailedHost)+
+            "\n메인 페이지 오류 설명: "+(lastErrorDescription.isEmpty()?"없음":lastErrorDescription)+
+            "\n미디어 네트워크 오류: "+mediaErrorCount+"건"+
             "\n최근 미디어 요청 호스트: "+(lastMediaErrorHost.isEmpty()?"기록 없음":lastMediaErrorHost)+
-            "\n최근 오류: "+(lastMediaErrorDetail.isEmpty()?"기록 없음":lastMediaErrorDetail)+
-            "\n\nERR_CONNECTION_RESET은 연결이 끊어진 것이며, 사이트 측 정책·네트워크 경로·WebView 호환성 등 다양한 원인이 가능합니다. 이 기능은 오류를 진단할 뿐 접속 제한을 우회하지 않습니다.";
+            "\n최근 미디어 오류: "+(lastMediaErrorDetail.isEmpty()?"기록 없음":lastMediaErrorDetail)+
+            "\n(전체 URL, URL 쿼리, 쿠키 및 비밀번호는 포함하지 않음)";
+    }
+    private void copyDiagnosticsReport(){
+        android.content.ClipboardManager clip=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+        clip.setPrimaryClip(ClipData.newPlainText("MediaShield Connection Diagnostics",buildDiagnosticsReport()));
+        Toast.makeText(this,"진단 정보가 복사되었습니다",Toast.LENGTH_SHORT).show();
+    }
+    private void showMediaConnectionDiagnostics(){
         new AlertDialog.Builder(this).setTitle("영상 연결 진단")
-            .setMessage(message).setPositiveButton("확인",null)
-            .setNeutralButton("진단 복사",(d,w)->{
-                android.content.ClipboardManager clip=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
-                clip.setPrimaryClip(ClipData.newPlainText("MediaShield Media Diagnostics",message));
-                Toast.makeText(this,"진단 정보가 복사되었습니다",Toast.LENGTH_SHORT).show();
-            }).show();
+            .setMessage(buildDiagnosticsReport())
+            .setPositiveButton("진단 정보 복사",(d,w)->copyDiagnosticsReport())
+            .setNegativeButton("닫기",null).show();
     }
     /** The UA toggle only changes identification: it is not a network bypass or another browser engine. */
     private void applyUserAgentMode(){
@@ -388,10 +432,10 @@ public class MainActivity extends Activity {
         String explanation="연결 오류 " + code + " · " + detail + "\n\n사이트: " + host +
             "\n\n연결 재설정은 서버, 통신망, DNS 또는 사이트 정책에서 발생할 수 있습니다. 광고 차단을 꺼도 해결되지 않을 수 있습니다. SSL 인증서 오류는 우회하지 않습니다.";
         new AlertDialog.Builder(this).setTitle("사이트 연결 실패")
-            .setMessage(explanation)
-            .setPositiveButton("다시 시도",(d,w)->{showWeb();web.loadUrl(failedUrl);})
-            .setNeutralButton("Brave에서 열기",(d,w)->openExternalUrl(failedUrl))
-            .setNegativeButton("영상 호환 설정",(d,w)->toggleVideoCompatibilityForCurrentSite()).show();
+            .setMessage(explanation+"\n\n오류 원인을 확인하려면 아래 '진단 정보 복사'를 누르세요.")
+            .setPositiveButton("진단 정보 복사",(d,w)->copyDiagnosticsReport())
+            .setNeutralButton("다시 시도",(d,w)->{showWeb();web.loadUrl(failedUrl);})
+            .setNegativeButton("Brave에서 열기",(d,w)->openExternalUrl(failedUrl)).show();
     }
     private void openExternalUrl(String url){
         if(!TaskStore.validUrl(url))return;
