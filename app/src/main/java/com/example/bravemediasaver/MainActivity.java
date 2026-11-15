@@ -314,21 +314,46 @@ public class MainActivity extends Activity {
             || host.equals("njavtv.com") || host.endsWith(".njavtv.com");
     }
     private String mediaEngineMode(){
-        return getSharedPreferences("engine",MODE_PRIVATE).getString("media_mode","brave");
+        // v11 default launched another app. Prefer an explicitly pinned in-app Brave Custom Tab.
+        return getSharedPreferences("engine",MODE_PRIVATE).getString("media_mode","brave_tab");
     }
     private boolean shouldRouteMediaToBrave(String url){
         return isMediaEngineHost(url) && !"webview".equals(mediaEngineMode());
     }
+    private String installedBravePackage(){
+        // Package visibility is granted only for these explicit Brave variants in the manifest.
+        for(String candidate:new String[]{"com.brave.browser","com.brave.browser_beta","com.brave.browser_nightly"}){
+            try{
+                getPackageManager().getPackageInfo(candidate,0);
+                return candidate;
+            }catch(android.content.pm.PackageManager.NameNotFoundException ignored){}
+        }
+        return null;
+    }
+    private void showBraveUnavailable(String url,String detail){
+        new AlertDialog.Builder(this).setTitle("Brave 브라우저 확인 필요")
+            .setMessage(detail+"\\n\\nYouTube 앱이나 Chrome으로 자동 전환하지 않습니다. "+
+                "Brave가 설치되어 있지 않거나 해당 실행 방식을 지원하지 않을 수 있습니다. "+
+                "MediaShield 내부 WebView로 열면 영상 광고나 사이트 접속 오류가 다시 발생할 수 있습니다.")
+            .setPositiveButton("내부 WebView에서 열기",(d,w)->{
+                showWeb();web.loadUrl(url);
+            }).setNegativeButton("취소",null).show();
+    }
     private void openInBraveCustomTab(String url){
         if(!TaskStore.validUrl(url))return;
+        String brave=installedBravePackage();
+        if(brave==null){
+            showBraveUnavailable(url,"설치된 Brave 앱의 패키지를 확인하지 못했습니다.");
+            return;
+        }
         try{
             CustomTabsIntent tab=new CustomTabsIntent.Builder()
                 .setShowTitle(true).build();
-            tab.intent.setPackage("com.brave.browser");
+            // Never leave the package unset: that would launch Chrome, YouTube or a chooser.
+            tab.intent.setPackage(brave);
             tab.launchUrl(this,Uri.parse(url));
-        }catch(Exception error){
-            Toast.makeText(this,"Brave 맞춤 탭을 열 수 없어 Brave 앱으로 전환합니다",Toast.LENGTH_LONG).show();
-            openExternalUrl(url);
+        }catch(android.content.ActivityNotFoundException | SecurityException error){
+            showBraveUnavailable(url,"Brave 맞춤 탭을 실행할 수 없습니다: "+error.getClass().getSimpleName());
         }
     }
     private void navigateTo(String url){
@@ -343,8 +368,8 @@ public class MainActivity extends Activity {
     }
     private void showMediaEngineSetting(){
         String[] labels={
-            "Brave 앱에서 열기 · 사이트 호환성과 광고 차단 우선 (권장)",
-            "Brave 맞춤 탭 · 앱에서 돌아오기 편리 (실험적)",
+            "Brave 앱에서 열기 · 별도 브라우저로 이동",
+            "Brave 맞춤 탭 · MediaShield에서 돌아오기 편리 (기본값)",
             "MediaShield 내부 WebView · 접속/광고 제한 가능"
         };
         String[] values={"brave","brave_tab","webview"};
@@ -474,8 +499,9 @@ public class MainActivity extends Activity {
         android.content.pm.PackageInfo pkg=android.webkit.WebView.getCurrentWebViewPackage();
         String engineVersion=pkg==null?"알 수 없음":pkg.versionName;
         String lastFailedHost=siteHostname(lastFailedUrl);
-        return "MediaShield 연결 진단 (v11.0)"+
+        return "MediaShield 연결 진단 (v11.1)"+
             "\n영상 사이트 실행 엔진: "+mediaEngineMode()+
+            "\nBrave 패키지 확인: "+(installedBravePackage()==null?"설치 여부 미확인":installedBravePackage())+
             "\n현재 페이지: "+(pageHost.isEmpty()?"없음":pageHost)+
             "\nWebView 버전: "+engineVersion+
             "\nChrome 식별 모드: "+(compatibilityMode?"켜짐":"꺼짐")+
@@ -606,12 +632,20 @@ public class MainActivity extends Activity {
     }
     private void openExternalUrl(String url){
         if(!TaskStore.validUrl(url))return;
+        String brave=installedBravePackage();
+        if(brave==null){
+            showBraveUnavailable(url,"설치된 Brave 앱의 패키지를 확인하지 못했습니다.");
+            return;
+        }
         Intent intent=new Intent(Intent.ACTION_VIEW,Uri.parse(url));
         intent.addCategory(Intent.CATEGORY_BROWSABLE);
-        intent.setPackage("com.brave.browser");
-        try{startActivity(intent);}catch(Exception e){intent.setPackage(null);
-            try{startActivity(Intent.createChooser(intent,"외부 브라우저로 열기"));}
-            catch(Exception ignored){Toast.makeText(this,"열 수 있는 브라우저가 없습니다",Toast.LENGTH_LONG).show();}}
+        // A strict package pin prevents accidental system/default-app deep-link handoff.
+        intent.setPackage(brave);
+        try{
+            startActivity(intent);
+        }catch(android.content.ActivityNotFoundException | SecurityException error){
+            showBraveUnavailable(url,"Brave 앱에서 주소를 열 수 없습니다: "+error.getClass().getSimpleName());
+        }
     }
     private int dp(int n){return (int)(getResources().getDisplayMetrics().density*n+.5f);}
     private TextView text(String str,int size){TextView v=new TextView(this);v.setText(str);v.setTextSize(size);v.setTextColor(Color.WHITE);return v;}
