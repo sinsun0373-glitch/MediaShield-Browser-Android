@@ -39,6 +39,8 @@ public class MainActivity extends Activity {
     private String recentNavigationChange="기록 없음";
     private String lastAutomaticNavigation="기록 없음";
     private int sameHostPathChanges=0;
+    private int blockedSameHostNavigations=0;
+    private String lastBlockedNavigation="기록 없음";
 
     private EditText urlBox;
     private LinearLayout foundList, downloadsList, root, tools, adPane, bookmarkPane;
@@ -155,6 +157,23 @@ public class MainActivity extends Activity {
                 // Capture only hosts and the first path segment, never full URLs or query tokens.
                 if(request.isForMainFrame() && !request.hasGesture())
                     lastAutomaticNavigation=safeNavigationLabel(pageUrl)+" → "+safeNavigationLabel(target);
+                // An opt-in navigation lock keeps the current page from being replaced by
+                // gesture-free scripted navigations, including same-site path changes.
+                // Do not block ordinary user taps or early server redirects.
+                if(request.isForMainFrame() && !request.hasGesture()
+                        && isNavigationLockEnabled(pageUrl)
+                        && pageNavigationStartedAt>0
+                        && android.os.SystemClock.elapsedRealtime()-pageNavigationStartedAt>1200
+                        && !siteHostname(target).isEmpty()
+                        && !siteHostname(pageUrl).isEmpty()
+                        && !target.equals(pageUrl)){
+                    lastBlockedNavigation=safeNavigationLabel(pageUrl)+" → "+safeNavigationLabel(target);
+                    if(siteHostname(target).equals(siteHostname(pageUrl)))blockedSameHostNavigations++;
+                    else blockedPopupNavigations++;
+                    runOnUiThread(()->Toast.makeText(MainActivity.this,
+                        "자동 페이지 이동 차단 · 주소 변경 잠금",Toast.LENGTH_SHORT).show());
+                    return true;
+                }
                 // Pop-under scripts sometimes redirect the current tab after a video starts.
                 // Only intercept automatic cross-site *main-frame* navigations after the page settled.
                 if(request.isForMainFrame() && !request.hasGesture() && adBlocker.isPopupBlockEnabled()
@@ -250,30 +269,31 @@ public class MainActivity extends Activity {
         if(TaskStore.validUrl(url))openExternalUrl(url);
     }
     private void showBrowserMenu(){
-        String[] actions={"영상 연결 진단", "이 사이트 영상 호환 모드", "주소창 위/아래 이동", "Chrome 호환 User-Agent 켜기/끄기", "현재 사이트 즐겨찾기", "즐겨찾기 목록", "광고 차단 설정", "이 사이트 광고 차단 잠시 끄기", "서드파티 쿠키 허용 설정", "Brave에서 현재 사이트 열기", "새로고침", "마지막 연결 오류 정보", "이 브라우저에 관하여"};
+        String[] actions={"영상 연결 진단", "이 사이트 자동 이동 잠금 켜기/끄기", "이 사이트 영상 호환 모드", "주소창 위/아래 이동", "Chrome 호환 User-Agent 켜기/끄기", "현재 사이트 즐겨찾기", "즐겨찾기 목록", "광고 차단 설정", "이 사이트 광고 차단 잠시 끄기", "서드파티 쿠키 허용 설정", "Brave에서 현재 사이트 열기", "새로고침", "마지막 연결 오류 정보", "이 브라우저에 관하여"};
         new AlertDialog.Builder(this).setTitle("MediaShield · 메뉴")
         .setItems(actions,(d,which)->{
             switch(which){
                 case 0:showMediaConnectionDiagnostics();break;
-                case 1:toggleVideoCompatibilityForCurrentSite();break;
-                case 2:
+                case 1:toggleNavigationLockForCurrentSite();break;
+                case 2:toggleVideoCompatibilityForCurrentSite();break;
+                case 3:
                     boolean bottom=!getSharedPreferences("appearance",MODE_PRIVATE).getBoolean("bottom_address",false);
                     getSharedPreferences("appearance",MODE_PRIVATE).edit().putBoolean("bottom_address",bottom).apply();
                     setAddressBarBottom(bottom);break;
-                case 3:toggleCompatibilityMode();break;
-                case 4:bookmarkCurrent();break;
-                case 5:showBookmarks();break;
-                case 6:showAdblock();break;
-                case 7:
+                case 4:toggleCompatibilityMode();break;
+                case 5:bookmarkCurrent();break;
+                case 6:showBookmarks();break;
+                case 7:showAdblock();break;
+                case 8:
                     String url=web.getUrl();if(!TaskStore.validUrl(url))break;
                     adBlocker.setSiteAllowed(url,!adBlocker.isSiteAllowed(url));
                     Toast.makeText(this,adBlocker.isSiteAllowed(url)?"이 사이트 광고 차단 제외":"광고 차단 적용",Toast.LENGTH_SHORT).show();
                     web.reload();break;
-                case 8:showThirdPartyCookiesSetting();break;
-                case 9:openExternalBrowser();break;
-                case 10:web.reload();break;
-                case 11:showConnectionFailure(lastFailedUrl,lastWebError,lastErrorDescription);break;
-                case 12:new AlertDialog.Builder(this).setTitle("MediaShield Browser · 호환성 테스트")
+                case 9:showThirdPartyCookiesSetting();break;
+                case 10:openExternalBrowser();break;
+                case 11:web.reload();break;
+                case 12:showConnectionFailure(lastFailedUrl,lastWebError,lastErrorDescription);break;
+                case 13:new AlertDialog.Builder(this).setTitle("MediaShield Browser · 호환성 테스트")
                     .setMessage("Android WebView 기반 브라우저이며 Brave의 Chromium/Shield 엔진과 다릅니다. Chrome User-Agent 호환 모드는 웹사이트 식별 정보만 변경하며 서버 연결 문제 해결이나 영상 광고 제거를 보장하지 않습니다.")
                     .setPositiveButton("확인",null).show();break;
             }
@@ -287,6 +307,40 @@ public class MainActivity extends Activity {
             return ("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
                 && host!=null?host.toLowerCase(Locale.ROOT):"";
         }catch(Exception ignored){return "";}
+    }
+    private boolean isNavigationLockEnabled(String url){
+        String host=siteHostname(url);
+        if(host.isEmpty())return false;
+        android.content.SharedPreferences prefs=getSharedPreferences("nav_lock",MODE_PRIVATE);
+        Set<String> disabled=prefs.getStringSet("disabled",Collections.emptySet());
+        Set<String> enabled=prefs.getStringSet("enabled",Collections.emptySet());
+        // For the reported site, start with protection enabled. It is reversible from the menu.
+        if(host.equals("njavtv.com"))return !disabled.contains(host);
+        return enabled.contains(host);
+    }
+    private void toggleNavigationLockForCurrentSite(){
+        String url=web==null?null:web.getUrl();
+        String host=siteHostname(url);
+        if(host.isEmpty()){
+            Toast.makeText(this,"먼저 웹사이트를 열어주세요",Toast.LENGTH_SHORT).show();
+            return;
+        }
+        boolean active=isNavigationLockEnabled(url);
+        new AlertDialog.Builder(this).setTitle("사이트별 자동 이동 잠금")
+            .setMessage("대상: "+host+"\n현재 상태: "+(active?"켜짐":"꺼짐")+
+                "\n\n영상 재생 중 사용자 터치 없이 다른 페이지로 자동 이동하는 것을 막습니다. "+
+                "같은 사이트의 경로 이동도 막을 수 있으며, 사이트 기능이 정상 동작하지 않으면 잠금을 끄세요. "+
+                "서버가 직접 연결을 끊는 경우에는 도움이 되지 않습니다.")
+            .setPositiveButton(active?"잠금 끄기":"잠금 켜기",(d,w)->{
+                android.content.SharedPreferences prefs=getSharedPreferences("nav_lock",MODE_PRIVATE);
+                Set<String> disabled=new HashSet<>(prefs.getStringSet("disabled",Collections.emptySet()));
+                Set<String> enabled=new HashSet<>(prefs.getStringSet("enabled",Collections.emptySet()));
+                if(active){disabled.add(host);enabled.remove(host);}
+                else {disabled.remove(host);enabled.add(host);}
+                prefs.edit().putStringSet("disabled",disabled).putStringSet("enabled",enabled).apply();
+                Toast.makeText(this,active?"자동 이동 잠금 꺼짐":"자동 이동 잠금 켜짐",Toast.LENGTH_SHORT).show();
+            })
+            .setNegativeButton("취소",null).show();
     }
     private boolean isVideoCompatibilityEnabled(String url){
         String host=siteHostname(url);
@@ -352,14 +406,17 @@ public class MainActivity extends Activity {
         android.content.pm.PackageInfo pkg=android.webkit.WebView.getCurrentWebViewPackage();
         String engineVersion=pkg==null?"알 수 없음":pkg.versionName;
         String lastFailedHost=siteHostname(lastFailedUrl);
-        return "MediaShield 연결 진단 (v10.6)"+
+        return "MediaShield 연결 진단 (v10.7)"+
             "\n현재 페이지: "+(pageHost.isEmpty()?"없음":pageHost)+
             "\nWebView 버전: "+engineVersion+
             "\nChrome 식별 모드: "+(compatibilityMode?"켜짐":"꺼짐")+
             "\n서드파티 쿠키: "+(getSharedPreferences("privacy",MODE_PRIVATE).getBoolean("third_party_cookies",false)?"허용":"차단")+
             "\n광고 차단: "+(adBlocker.isEnabled()?"켜짐":"꺼짐")+
             "\n영상 호환 모드: "+(isVideoCompatibilityEnabled(page)?"켜짐":"꺼짐")+
-            "\n팝업 자동 이동 차단: "+blockedPopupNavigations+"건"+
+            "\n자동 이동 잠금: "+(isNavigationLockEnabled(page)?"켜짐":"꺼짐")+
+            "\n서로 다른 호스트 자동 이동 차단: "+blockedPopupNavigations+"건"+
+            "\n동일 호스트 자동 이동 차단: "+blockedSameHostNavigations+"건"+
+            "\n최근 차단된 자동 이동: "+lastBlockedNavigation+
             "\n동일 호스트 경로 변경: "+sameHostPathChanges+"건"+
             "\n최근 페이지 이동: "+recentNavigationChange+
             "\n최근 자동 이동 요청: "+lastAutomaticNavigation+
