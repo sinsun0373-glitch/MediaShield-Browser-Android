@@ -180,7 +180,7 @@ public class MainActivity extends Activity {
         addBottomButton(bottom,"‹",()->{if(web.canGoBack()){showWeb();web.goBack();}});
         addBottomButton(bottom,"›",()->{if(web.canGoForward()){showWeb();web.goForward();}});
         addBottomButton(bottom,"⌂",()->{showWeb();web.loadUrl("https://www.google.com");});
-        addBottomButton(bottom,"▣",this::showMedia);
+        addBottomButton(bottom,"▶",this::showMedia);
         addBottomButton(bottom,"↓",this::showDownloads);
         addBottomButton(bottom,"◆",this::showAdblock);
         setAddressBarBottom(getSharedPreferences("appearance",MODE_PRIVATE).getBoolean("bottom_address",false));
@@ -247,14 +247,17 @@ public class MainActivity extends Activity {
     private void showMediaConnectionDiagnostics(){
         String page=web==null?"":web.getUrl();
         String pageHost=page==null?"":Uri.parse(page).getHost();
+        android.content.pm.PackageInfo pkg=android.webkit.WebView.getCurrentWebViewPackage();
+        String engineVersion=pkg==null?"알 수 없음":pkg.versionName;
         String message="현재 페이지: "+(pageHost==null?"없음":pageHost)+
-            "\\nWebView Chrome 식별 모드: "+(compatibilityMode?"켜짐":"꺼짐")+
-            "\\n서드파티 쿠키: "+(getSharedPreferences("privacy",MODE_PRIVATE).getBoolean("third_party_cookies",false)?"허용":"차단")+
-            "\\n광고 차단: "+(adBlocker.isEnabled()?"켜짐":"꺼짐")+
-            "\\n감지된 미디어 네트워크 오류: "+mediaErrorCount+"건"+
-            "\\n최근 미디어 요청 호스트: "+(lastMediaErrorHost.isEmpty()?"기록 없음":lastMediaErrorHost)+
-            "\\n최근 오류: "+(lastMediaErrorDetail.isEmpty()?"기록 없음":lastMediaErrorDetail)+
-            "\\n\\nERR_CONNECTION_RESET은 연결이 끊어진 것이며, 사이트 측 정책·네트워크 경로·WebView 호환성 등 다양한 원인이 가능합니다. 이 기능은 오류를 진단할 뿐 접속 제한을 우회하지 않습니다.";
+            "\nWebView 버전: "+engineVersion+
+            "\nWebView Chrome 식별 모드: "+(compatibilityMode?"켜짐":"꺼짐")+
+            "\n서드파티 쿠키: "+(getSharedPreferences("privacy",MODE_PRIVATE).getBoolean("third_party_cookies",false)?"허용":"차단")+
+            "\n광고 차단: "+(adBlocker.isEnabled()?"켜짐":"꺼짐")+
+            "\n감지된 미디어 네트워크 오류: "+mediaErrorCount+"건"+
+            "\n최근 미디어 요청 호스트: "+(lastMediaErrorHost.isEmpty()?"기록 없음":lastMediaErrorHost)+
+            "\n최근 오류: "+(lastMediaErrorDetail.isEmpty()?"기록 없음":lastMediaErrorDetail)+
+            "\n\nERR_CONNECTION_RESET은 연결이 끊어진 것이며, 사이트 측 정책·네트워크 경로·WebView 호환성 등 다양한 원인이 가능합니다. 이 기능은 오류를 진단할 뿐 접속 제한을 우회하지 않습니다.";
         new AlertDialog.Builder(this).setTitle("영상 연결 진단")
             .setMessage(message).setPositiveButton("확인",null)
             .setNeutralButton("진단 복사",(d,w)->{
