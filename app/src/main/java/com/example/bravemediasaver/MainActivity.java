@@ -34,6 +34,8 @@ public class MainActivity extends Activity {
     private String originalUserAgent="";
     private boolean compatibilityMode=false;
     private volatile boolean videoCompatibilityActive=false;
+    private long pageNavigationStartedAt=0;
+    private int blockedPopupNavigations=0;
 
     private EditText urlBox;
     private LinearLayout foundList, downloadsList, root, tools, adPane, bookmarkPane;
@@ -78,7 +80,7 @@ public class MainActivity extends Activity {
         urlBox.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_GO);
         urlBox.setOnFocusChangeListener((v,hasFocus)->{if(hasFocus)urlBox.selectAll();});
         urlBox.setOnEditorActionListener((v,action,event)->{go();return true;});
-        addNavButton(nav,"↓",this::showDownloads,42);
+        addNavButton(nav,"↓",this::showDownloadChooser,42);
         addNavButton(nav,"⟳",()->{showWeb();web.reload();},42);
         addNavButton(nav,"⋮",this::showBrowserMenu,42);
         tools=row();tools.setBackgroundColor(0xff17191f);
@@ -117,7 +119,7 @@ public class MainActivity extends Activity {
         });
         web.setWebViewClient(new WebViewClient(){
             @Override public void onPageStarted(WebView v,String u,android.graphics.Bitmap icon){
-                pageUrl=u;mainFrameFailed=false;lastWebError=0;adBlocker.resetPageCount();media.clear();
+                pageUrl=u;pageNavigationStartedAt=android.os.SystemClock.elapsedRealtime();mainFrameFailed=false;lastWebError=0;adBlocker.resetPageCount();media.clear();
                 videoCompatibilityActive=isVideoCompatibilityEnabled(u);
                 boolean globalCookies=getSharedPreferences("privacy",MODE_PRIVATE).getBoolean("third_party_cookies",false);
                 android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(v,globalCookies || videoCompatibilityActive);
@@ -143,7 +145,24 @@ public class MainActivity extends Activity {
                 if(liveScan&&looksLikeMedia(u))runOnUiThread(()->addMedia(u));
                 return null;
             }
-            @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest request){String u=request.getUrl().toString();if(u.startsWith("http://")||u.startsWith("https://"))return false;return true;}
+            @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest request){
+                String target=request.getUrl().toString();
+                if(!target.startsWith("http://") && !target.startsWith("https://"))return true;
+                // Pop-under scripts sometimes redirect the current tab after a video starts.
+                // Only intercept automatic cross-site *main-frame* navigations after the page settled.
+                if(request.isForMainFrame() && !request.hasGesture() && adBlocker.isPopupBlockEnabled()
+                        && !videoCompatibilityActive && pageNavigationStartedAt>0
+                        && android.os.SystemClock.elapsedRealtime()-pageNavigationStartedAt>2500
+                        && !siteHostname(target).isEmpty()
+                        && !siteHostname(pageUrl).isEmpty()
+                        && !siteHostname(target).equals(siteHostname(pageUrl))){
+                    blockedPopupNavigations++;
+                    runOnUiThread(()->Toast.makeText(MainActivity.this,
+                        "자동 광고 페이지 이동 차단 · 메뉴에서 팝업 차단을 끌 수 있습니다",Toast.LENGTH_SHORT).show());
+                    return true;
+                }
+                return false;
+            }
             @Override public void onReceivedError(WebView v,WebResourceRequest req,WebResourceError error){
                 if(!req.isForMainFrame()){
                     String failed=req.getUrl().toString();
@@ -306,6 +325,7 @@ public class MainActivity extends Activity {
             "\n서드파티 쿠키: "+(getSharedPreferences("privacy",MODE_PRIVATE).getBoolean("third_party_cookies",false)?"허용":"차단")+
             "\n광고 차단: "+(adBlocker.isEnabled()?"켜짐":"꺼짐")+
             "\n사이트별 영상 호환 모드: "+(isVideoCompatibilityEnabled(page)?"켜짐":"꺼짐")+
+            "\n자동 팝업 이동 차단: "+blockedPopupNavigations+"건"+
             "\n감지된 미디어 네트워크 오류: "+mediaErrorCount+"건"+
             "\n최근 미디어 요청 호스트: "+(lastMediaErrorHost.isEmpty()?"기록 없음":lastMediaErrorHost)+
             "\n최근 오류: "+(lastMediaErrorDetail.isEmpty()?"기록 없음":lastMediaErrorDetail)+
@@ -449,6 +469,41 @@ public class MainActivity extends Activity {
     }
     private boolean isHls(String u){return u!=null && (u.matches("(?i).*\\.m3u8(?:[?#].*)?$") || u.matches("(?i).*[?&](?:format|ext|type)=m3u8(?:&.*)?$"));}
     private boolean isDash(String u){return u!=null&&u.matches("(?i).*\\.mpd(?:[?#].*)?$");}
+    private boolean isVideoFileCandidate(String url){
+        if(url==null)return false;
+        try {
+            Uri u=Uri.parse(url);
+            String path=u.getPath();
+            if(path!=null && path.matches("(?i).*\\\\.(mp4|webm|m4v|mov|m3u8|mpd|ts|mp3|m4a)(?:$)"))return true;
+            return isHls(url) || isDash(url) || url.contains("videoplayback");
+        }catch(Exception ignored){return false;}
+    }
+    private void showDownloadChooser(){
+        // The toolbar button must begin a download flow, not only show completed tasks.
+        scanDomMedia();
+        ArrayList<String> available=new ArrayList<>();
+        for(String url:media)if(isVideoFileCandidate(url))available.add(url);
+        if(available.isEmpty()){
+            new AlertDialog.Builder(this).setTitle("영상 다운로드")
+                .setMessage("이 페이지에서 직접 저장 가능한 영상 주소를 찾지 못했습니다. 재생 버튼을 누른 후 다시 시도해 주세요. blob·DRM 영상은 지원하지 않습니다.")
+                .setPositiveButton("감지된 파일 보기",(d,w)->showMedia())
+                .setNeutralButton("다운로드 목록",(d,w)->showDownloads())
+                .setNegativeButton("취소",null).show();
+            return;
+        }
+        String[] names=new String[available.size()];
+        for(int i=0;i<available.size();i++){
+            Uri u=Uri.parse(available.get(i));
+            String part=u.getLastPathSegment();
+            String host=u.getHost();
+            names[i]=(part==null||part.isEmpty()?"미디어 파일":part.length()>44?part.substring(0,44)+"…":part)
+                +" · "+(host==null?"":host);
+        }
+        new AlertDialog.Builder(this).setTitle("저장할 영상 선택 · "+available.size()+"개")
+            .setItems(names,(d,index)->downloadMedia(available.get(index)))
+            .setNeutralButton("다운로드 목록",(d,w)->showDownloads())
+            .setNegativeButton("취소",null).show();
+    }
     private void showMedia(){clearPanels();foundList.setVisibility(View.VISIBLE);scanDomMedia();populateMedia();}
     private void populateMedia(){foundList.removeAllViews();TextView hdr=text("  감지된 미디어 " + media.size()+"개 · HLS 화질 선택 / 라이브 TS 녹화 지원",15);hdr.setPadding(dp(10),dp(12),0,dp(12));foundList.addView(hdr);
         addButton(foundList,"브라우저로 돌아가기",this::showWeb);
