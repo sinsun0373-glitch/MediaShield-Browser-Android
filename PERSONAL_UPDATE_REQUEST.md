@@ -1,13 +1,14 @@
-# MediaShield v11.2 personal signed APK update
+# MediaShield v11.3 personal signed update
 
-Requested fixes after v11.1 user testing:
-- User reports APK transfer interrupted mid-download; remove AndroidX browser dependency, reduce APK size significantly.
-- Never automatically transfer YouTube or video-site URLs to YouTube, Chrome, Brave, or another browser.
-- Keep the browser internal to MediaShield WebView, with manual Brave action explicitly available only in menus.
-- Add browser HTML5 media play, pause, stop controls (best effort; cross-origin iframes can't be controlled by page JS).
-- Add fullscreen video overlay with play, pause, stop, close actions.
-- Add native in-app Android VideoView player for detected direct HTTPS video URLs, with standard seek bar, playback controls, and an exit button.
-- The native player does not bypass DRM or guarantee support for HLS/DASH; ERR_CONNECTION_RESET and YouTube in-stream ad skipping remain unsolved.
-- Debug APK build, pure-Java tests, security checks and archive/signature checks passed for code commit 8e3947022ec3d69877db329147ce8e76db7fc841 in run 43736853162.
-- Use the established personal signing identity from bootstrap run 43712038023; never generate a new key.
-- Not Google Play Protect certified.
+User reports that the DNS/HTTPS direct test was not visible in the v11.2 diagnostic window.
+Verified actual MainActivity.java: the test handler runNetworkProbe was only connected to a neutral AlertDialog button, not a direct top-level menu option.
+
+Changes in v11.3:
+- Add direct top-level menu item "DNS·HTTPS 직접 검사" immediately after "영상 연결 진단"; verifies switch indices 0–15 are unique and aligned with 16 menu options.
+- Also expose DNS/HTTPS test in the main connection-error dialog as its neutral button, replacing redundant retry (refresh remains available in browser).
+- Shorten the diagnostic dialog neutral button label to "네트워크 검사" to reduce narrow-screen button crowding.
+- Bump report and network probe labels to v11.3.
+- Preserve internal WebView navigation, native player functionality and personal signing identity.
+- GitHub CI compile, JVM tests, security checks, APK inspection and debug signing checks passed in run 43738479942.
+- Does not solve the upstream ERR_CONNECTION_RESET or YouTube in-stream ads. Android UI on user's device still requires testing.
+- Existing personal encrypted signing key from 43712038023; do not generate a new identity. Not Google Play Protect certified.
