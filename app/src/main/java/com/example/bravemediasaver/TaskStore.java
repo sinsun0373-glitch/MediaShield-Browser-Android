@@ -17,7 +17,22 @@ public final class TaskStore {
 
     public static synchronized JSONArray all(Context ctx) {
         String raw = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE).getString(KEY, "[]");
-        try { return new JSONArray(raw); } catch (Exception e) { return new JSONArray(); }
+        try {
+            JSONArray data = new JSONArray(raw);
+            boolean sanitized = false;
+            for (int i=0; i<data.length(); i++) {
+                JSONObject task=data.optJSONObject(i);
+                if (task!=null && !task.optString("cookie").isEmpty()) {
+                    task.put("cookie", "");
+                    sanitized=true;
+                }
+            }
+            if (sanitized) {
+                ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit()
+                    .putString(KEY, data.toString()).commit();
+            }
+            return data;
+        } catch (Exception e) { return new JSONArray(); }
     }
     private static void save(Context ctx, JSONArray data) {
         ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit().putString(KEY, data.toString()).commit();

@@ -72,6 +72,8 @@ jobs:
           assert "android.permission.QUERY_ALL_PACKAGES" not in manifest
           assert "android.permission.MANAGE_EXTERNAL_STORAGE" not in manifest
           assert 't.put("cookie","")' in store
+          assert 'if (sanitized)' in store
+          assert 'task.put("cookie", "")' in store
           assert "validDownloadUrl" in store
           assert "MIXED_CONTENT_NEVER_ALLOW" in web
           assert "setAllowUniversalAccessFromFileURLs(false)" in web
