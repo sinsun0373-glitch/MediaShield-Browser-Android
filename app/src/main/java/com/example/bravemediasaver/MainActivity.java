@@ -565,6 +565,19 @@ public class MainActivity extends Activity {
             .setNeutralButton("다시 시도",(d,w)->navigateTo(failedUrl))
             .setNegativeButton("Brave에서 열기",(d,w)->openExternalUrl(failedUrl)).show();
     }
+    private String installedBravePackage(){
+        for(String candidate:new String[]{"com.brave.browser","com.brave.browser_beta","com.brave.browser_nightly"}){
+            try{getPackageManager().getPackageInfo(candidate,0);return candidate;}
+            catch(android.content.pm.PackageManager.NameNotFoundException ignored){}
+        }
+        return null;
+    }
+    private void showBraveUnavailable(String url,String message){
+        new AlertDialog.Builder(this).setTitle("Brave 실행 불가")
+            .setMessage(message+"\n사이트는 MediaShield 내부에서 계속 사용할 수 있습니다.")
+            .setPositiveButton("내부에서 열기",(d,w)->navigateTo(url))
+            .setNegativeButton("닫기",null).show();
+    }
     private void openExternalUrl(String url){
         if(!TaskStore.validUrl(url))return;
         String brave=installedBravePackage();
@@ -763,7 +776,7 @@ public class MainActivity extends Activity {
         String referer=web.getUrl();
         if(TaskStore.validUrl(referer))headers.put("Referer",referer);
         if(siteHostname(url).equals(siteHostname(referer))){
-            String cookie=CookieManager.getInstance().getCookie(url);
+            String cookie=android.webkit.CookieManager.getInstance().getCookie(url);
             if(cookie!=null&&!cookie.isEmpty())headers.put("Cookie",cookie);
         }
         playerView.setVideoURI(Uri.parse(url),headers);
