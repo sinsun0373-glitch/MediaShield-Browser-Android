@@ -28,6 +28,8 @@ public class MainActivity extends Activity {
     private String lastFailedUrl="";
     private String lastErrorDescription="";
     private boolean mainFrameFailed=false;
+    private String originalUserAgent="";
+    private boolean compatibilityMode=false;
 
     private EditText urlBox;
     private LinearLayout foundList, downloadsList, root, tools, adPane, bookmarkPane;
@@ -81,6 +83,9 @@ public class MainActivity extends Activity {
         ws.setJavaScriptCanOpenWindowsAutomatically(!adBlocker.isPopupBlockEnabled());
         ws.setSafeBrowsingEnabled(true);ws.setAllowFileAccessFromFileURLs(false);ws.setAllowUniversalAccessFromFileURLs(false);ws.setSaveFormData(false);
         ws.setSupportMultipleWindows(false);
+        originalUserAgent=ws.getUserAgentString();
+        compatibilityMode=getSharedPreferences("appearance",MODE_PRIVATE).getBoolean("chrome_ua_compat",false);
+        applyUserAgentMode();
         android.webkit.CookieManager.getInstance().setAcceptCookie(true);android.webkit.CookieManager.getInstance().setAcceptThirdPartyCookies(web,getSharedPreferences("privacy",MODE_PRIVATE).getBoolean("third_party_cookies",false));
         web.setWebChromeClient(new WebChromeClient(){
             @Override public void onProgressChanged(WebView view,int progress){
@@ -188,7 +193,7 @@ public class MainActivity extends Activity {
         if(TaskStore.validUrl(url))openExternalUrl(url);
     }
     private void showBrowserMenu(){
-        String[] actions={"주소창 위/아래 이동", "현재 사이트 즐겨찾기", "즐겨찾기 목록", "광고 차단 설정", "이 사이트 광고 차단 잠시 끄기", "서드파티 쿠키 허용 설정", "Brave에서 현재 사이트 열기", "새로고침", "마지막 연결 오류 정보", "이 브라우저에 관하여"};
+        String[] actions={"주소창 위/아래 이동", "Chrome 호환 User-Agent 켜기/끄기", "현재 사이트 즐겨찾기", "즐겨찾기 목록", "광고 차단 설정", "이 사이트 광고 차단 잠시 끄기", "서드파티 쿠키 허용 설정", "Brave에서 현재 사이트 열기", "새로고침", "마지막 연결 오류 정보", "이 브라우저에 관하여"};
         new AlertDialog.Builder(this).setTitle("MediaShield · 메뉴")
         .setItems(actions,(d,which)->{
             switch(which){
@@ -196,23 +201,38 @@ public class MainActivity extends Activity {
                     boolean bottom=!getSharedPreferences("appearance",MODE_PRIVATE).getBoolean("bottom_address",false);
                     getSharedPreferences("appearance",MODE_PRIVATE).edit().putBoolean("bottom_address",bottom).apply();
                     setAddressBarBottom(bottom);break;
-                case 1:bookmarkCurrent();break;
-                case 2:showBookmarks();break;
-                case 3:showAdblock();break;
-                case 4:
+                case 1:toggleCompatibilityMode();break;
+                case 2:bookmarkCurrent();break;
+                case 3:showBookmarks();break;
+                case 4:showAdblock();break;
+                case 5:
                     String url=web.getUrl();if(!TaskStore.validUrl(url))break;
                     adBlocker.setSiteAllowed(url,!adBlocker.isSiteAllowed(url));
                     Toast.makeText(this,adBlocker.isSiteAllowed(url)?"이 사이트 광고 차단 제외":"광고 차단 적용",Toast.LENGTH_SHORT).show();
                     web.reload();break;
-                case 5:showThirdPartyCookiesSetting();break;
-                case 6:openExternalBrowser();break;
-                case 7:web.reload();break;
-                case 8:showConnectionFailure(lastFailedUrl,lastWebError,lastErrorDescription);break;
-                case 9:new AlertDialog.Builder(this).setTitle("MediaShield Browser · 보안 점검 버전")
-                    .setMessage("Android WebView 기반 독립 브라우저입니다. Brave 공식 앱이 아니며 모든 사이트 및 DRM 영상과 호환되지는 않습니다.\n\n사이트 연결이 끊어지면 네트워크·DNS·사이트 정책 때문일 수도 있습니다.")
+                case 6:showThirdPartyCookiesSetting();break;
+                case 7:openExternalBrowser();break;
+                case 8:web.reload();break;
+                case 9:showConnectionFailure(lastFailedUrl,lastWebError,lastErrorDescription);break;
+                case 10:new AlertDialog.Builder(this).setTitle("MediaShield Browser · 호환성 테스트")
+                    .setMessage("Android WebView 기반 브라우저이며 Brave의 Chromium/Shield 엔진과 다릅니다. Chrome User-Agent 호환 모드는 웹사이트 식별 정보만 변경하며 서버 연결 문제 해결이나 영상 광고 제거를 보장하지 않습니다.")
                     .setPositiveButton("확인",null).show();break;
             }
         }).show();
+    }
+    /** The UA toggle only changes identification: it is not a network bypass or another browser engine. */
+    private void applyUserAgentMode(){
+        if(web==null || originalUserAgent.isEmpty())return;
+        if(!compatibilityMode){web.getSettings().setUserAgentString(originalUserAgent);return;}
+        String ua=originalUserAgent.replace("; wv","").replace("Version/4.0 ","");
+        web.getSettings().setUserAgentString(ua);
+    }
+    private void toggleCompatibilityMode(){
+        compatibilityMode=!compatibilityMode;
+        getSharedPreferences("appearance",MODE_PRIVATE).edit().putBoolean("chrome_ua_compat",compatibilityMode).apply();
+        applyUserAgentMode();
+        Toast.makeText(this,compatibilityMode?"Chrome 식별 호환 모드 켜짐 (브라우저 엔진은 동일)":"기본 WebView 식별 모드",Toast.LENGTH_LONG).show();
+        if(web!=null && web.getUrl()!=null)web.reload();
     }
     private void setAddressBarBottom(boolean bottom){
         if(addressRow==null || browserChrome==null || root==null)return;
