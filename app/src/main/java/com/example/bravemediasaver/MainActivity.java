@@ -61,13 +61,38 @@ public class MainActivity extends Activity {
     private int scanTick=0;
     private EditText directInputBox;
     private String typedDirectUrl="";
+    private LinearLayout downloadItems;
+    private String downloadSnapshot="";
+    private boolean probeRunning=false;
+    private volatile int pageGeneration=0;
+    private String buttonDescription(String label){
+        switch(label){
+            case "‹":return "뒤로"; case "›":return "앞으로"; case "⌂":return "홈";
+            case "▶":return "감지된 미디어"; case "⏯":return "웹 영상 조작";
+            case "◆":return "광고 차단 설정"; case "↓":return "영상 다운로드";
+            case "⟳":return "새로고침"; case "⋮":return "메뉴"; default:return label;
+        }
+    }
+    private void describeButton(TextView button,String label){
+        String description=buttonDescription(label);
+        button.setContentDescription(description);button.setTooltipText(description);
+        button.setFocusable(true);button.setMinHeight(dp(48));
+    }
 
     @Override public void onCreate(Bundle saved){super.onCreate(saved);
         getWindow().setStatusBarColor(Color.rgb(15,20,29));getWindow().setNavigationBarColor(Color.rgb(15,20,29));
+        if(saved!=null)typedDirectUrl=saved.getString("direct_url","");
         adBlocker=new AdBlocker(this);
         fastDownloads=getSharedPreferences("download_settings",MODE_PRIVATE).getBoolean("fast",true);
         root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(Color.rgb(19,24,34));setContentView(root);
-        // Compact browser chrome: one address bar, one bottom navigation rail.
+        // Respect Android 15+ edge-to-edge and keyboard insets.
+        root.setOnApplyWindowInsetsListener((view,insets)->{
+            android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
+            android.graphics.Insets ime=insets.getInsets(WindowInsets.Type.ime());
+            view.setPadding(bars.left,bars.top,bars.right,Math.max(bars.bottom,ime.bottom));
+            return insets;
+        });
+        root.requestApplyInsets();
         browserChrome=new LinearLayout(this);browserChrome.setOrientation(LinearLayout.VERTICAL);
         browserChrome.setBackgroundColor(0xff17191f);root.addView(browserChrome);
         LinearLayout nav=row();addressRow=nav;nav.setPadding(dp(7),dp(7),dp(7),dp(7));browserChrome.addView(nav);
@@ -76,7 +101,7 @@ public class MainActivity extends Activity {
         pageProgress.setProgressTintList(android.content.res.ColorStateList.valueOf(0xfff4512c));
         browserChrome.addView(pageProgress,new LinearLayout.LayoutParams(-1,dp(2)));
         TextView shield=text("◆",20);shield.setTextColor(0xffff663d);shield.setGravity(Gravity.CENTER);
-        nav.addView(shield,new LinearLayout.LayoutParams(dp(40),dp(46)));
+        nav.addView(shield,new LinearLayout.LayoutParams(dp(48),dp(48)));
         shieldButton=shield;
         shield.setContentDescription("개인정보 보호 및 광고 차단 설정");
         shield.setOnClickListener(v->showAdblock());
@@ -85,13 +110,13 @@ public class MainActivity extends Activity {
         urlBox.setTextSize(14);urlBox.setPadding(dp(12),0,dp(6),0);
         urlBox.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI);
         urlBox.setBackground(makeRounded(0xff292e38,20));
-        nav.addView(urlBox,new LinearLayout.LayoutParams(0,dp(46),1));
+        nav.addView(urlBox,new LinearLayout.LayoutParams(0,dp(48),1));
         urlBox.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_GO);
         urlBox.setOnFocusChangeListener((v,hasFocus)->{if(hasFocus)urlBox.selectAll();});
         urlBox.setOnEditorActionListener((v,action,event)->{go();return true;});
-        addNavButton(nav,"↓",this::showDownloadChooser,42);
-        addNavButton(nav,"⟳",()->{showWeb();web.reload();},42);
-        addNavButton(nav,"⋮",this::showBrowserMenu,42);
+        addNavButton(nav,"↓",this::showDownloadChooser,48);
+        addNavButton(nav,"⟳",()->{showWeb();web.reload();},48);
+        addNavButton(nav,"⋮",this::showBrowserMenu,48);
         tools=row();tools.setBackgroundColor(0xff17191f);
         status=text("",10);status.setVisibility(View.GONE);
         web=new WebView(this);web.setBackgroundColor(Color.WHITE);
@@ -138,6 +163,11 @@ public class MainActivity extends Activity {
         });
         web.setWebViewClient(new WebViewClient(){
             @Override public void onPageStarted(WebView v,String u,android.graphics.Bitmap icon){
+                pageGeneration++;
+                lastFailedUrl="";lastErrorDescription="";
+                mediaErrorCount=0;lastMediaErrorHost="";lastMediaErrorDetail="";
+                blockedPopupNavigations=0;blockedSameHostNavigations=0;sameHostPathChanges=0;
+                lastBlockedNavigation="기록 없음";lastAutomaticNavigation="기록 없음";recentNavigationChange="기록 없음";
                 notePageNavigation(pageUrl,u);
                 pageUrl=u;pageNavigationStartedAt=android.os.SystemClock.elapsedRealtime();mainFrameFailed=false;lastWebError=0;adBlocker.resetPageCount();media.clear();
                 videoCompatibilityActive=isVideoCompatibilityEnabled(u);
@@ -146,11 +176,11 @@ public class MainActivity extends Activity {
                 if(!urlBox.hasFocus())urlBox.setText(u);
             }
             @Override public void onPageFinished(WebView v,String u){
-                pageUrl=u;urlBox.setText(u);
+                pageUrl=u;if(!urlBox.hasFocus())urlBox.setText(u);
                 if(mainFrameFailed)return;
                 scanDomMedia();
                 v.evaluateJavascript("(function(){document.querySelectorAll('video').forEach(function(x){x.controls=true;});})();",null);
-                if(adBlocker.isEnabled()&&adBlocker.isCosmeticEnabled()&&!adBlocker.isSiteAllowed(u)){
+                if(!videoCompatibilityActive&&adBlocker.isEnabled()&&adBlocker.isCosmeticEnabled()&&!adBlocker.isSiteAllowed(u)){
                     v.evaluateJavascript(AdBlocker.COSMETIC_JS,null);
                     // Only press an already-available skip button on YouTube; no stream URL rewriting.
                     if(u!=null && (u.startsWith("https://www.youtube.com/") || u.startsWith("https://m.youtube.com/")))
@@ -163,7 +193,8 @@ public class MainActivity extends Activity {
             @Override public WebResourceResponse shouldInterceptRequest(WebView v,WebResourceRequest request){
                 String u=request.getUrl().toString();
                 if(!videoCompatibilityActive && adBlocker.shouldBlock(u,pageUrl,request.isForMainFrame()))return adBlocker.blankResponse();
-                if(liveScan&&looksLikeMedia(u))runOnUiThread(()->addMedia(u));
+                final int generation=pageGeneration;
+                if(liveScan&&looksLikeMedia(u))runOnUiThread(()->{if(generation==pageGeneration)addMedia(u);});
                 return null;
             }
             @Override public boolean shouldOverrideUrlLoading(WebView v,WebResourceRequest request){
@@ -273,11 +304,12 @@ public class MainActivity extends Activity {
         bg.setColor(color);bg.setCornerRadius(dp(radiusDp));return bg;
     }
     private void addBottomButton(LinearLayout bar,String label,Runnable click){
-        TextView btn=text(label,23);btn.setTextColor(0xffe1e5ed);btn.setGravity(Gravity.CENTER);
+        TextView btn=text(label+"\n"+buttonDescription(label),12);btn.setTextColor(0xffe1e5ed);btn.setGravity(Gravity.CENTER);
         btn.setBackground(makeRounded(0xff222630,16));
-        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,dp(48),1);
+        LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,dp(58),1);
         params.setMargins(dp(2),0,dp(2),0);
         bar.addView(btn,params);
+        describeButton(btn,label);
         btn.setOnClickListener(v->click.run());
     }
     private void hideVideoFullscreen(){
@@ -293,6 +325,18 @@ public class MainActivity extends Activity {
         if(TaskStore.validUrl(url))openExternalUrl(url);
     }
     private void showBrowserMenu(){
+        String[] actions={"영상 다운로드","다운로드 목록","감지된 미디어","현재 사이트 즐겨찾기","즐겨찾기 목록","광고 차단 설정","연결 진단 · DNS 검사","고급 설정"};
+        new AlertDialog.Builder(this).setTitle("MediaShield")
+            .setItems(actions,(d,which)->{
+                switch(which){
+                    case 0:showDownloadChooser();break;case 1:showDownloads();break;
+                    case 2:showMedia();break;case 3:bookmarkCurrent();break;
+                    case 4:showBookmarks();break;case 5:showAdblock();break;
+                    case 6:showMediaConnectionDiagnostics();break;case 7:showAdvancedMenu();break;
+                }
+            }).setNegativeButton("닫기",null).show();
+    }
+    private void showAdvancedMenu(){
         String[] actions={"영상 연결 진단", "DNS·HTTPS 직접 검사", "이 사이트 자동 이동 잠금 켜기/끄기", "이 사이트 영상 호환 모드", "주소창 위/아래 이동", "Chrome 호환 User-Agent 켜기/끄기", "현재 사이트 즐겨찾기", "즐겨찾기 목록", "광고 차단 설정", "이 사이트 광고 차단 잠시 끄기", "서드파티 쿠키 허용 설정", "Brave에서 현재 사이트 열기", "새로고침", "마지막 연결 오류 정보", "이 브라우저에 관하여", "영상 실행 방식 및 내부 플레이어"};
         new AlertDialog.Builder(this).setTitle("MediaShield · 메뉴")
         .setItems(actions,(d,which)->{
@@ -420,11 +464,7 @@ public class MainActivity extends Activity {
             Uri parsed=Uri.parse(url);
             String host=parsed.getHost();
             if(host==null)return "알 수 없음";
-            java.util.List<String> paths=parsed.getPathSegments();
-            String first=paths==null||paths.isEmpty()?"":paths.get(0);
-            // Do not copy a media ID, query token, or personal URL into diagnostics.
-            if(first.length()>24)first=first.substring(0,24)+"…";
-            return host+(first.isEmpty()?"/":"/"+first+"/…");
+            return host; // Paths can also contain personal IDs; report hosts only.
         }catch(Exception ignored){return "알 수 없음";}
     }
     private void notePageNavigation(String previous,String current){
@@ -445,14 +485,16 @@ public class MainActivity extends Activity {
         android.content.pm.PackageInfo pkg=android.webkit.WebView.getCurrentWebViewPackage();
         String engineVersion=pkg==null?"알 수 없음":pkg.versionName;
         String lastFailedHost=siteHostname(lastFailedUrl);
-        return "MediaShield 연결 진단 (v11.3)"+
+        return "MediaShield 연결 진단 (v11.4 · 현재 페이지 기준)"+
             "\n영상 사이트 실행 엔진: MediaShield WebView"+
             "\nBrave 패키지 확인: "+(installedBravePackage()==null?"설치 여부 미확인":installedBravePackage())+
             "\n현재 페이지: "+(pageHost.isEmpty()?"없음":pageHost)+
             "\nWebView 버전: "+engineVersion+
             "\nChrome 식별 모드: "+(compatibilityMode?"켜짐":"꺼짐")+
             "\n서드파티 쿠키: "+(getSharedPreferences("privacy",MODE_PRIVATE).getBoolean("third_party_cookies",false)?"허용":"차단")+
-            "\n광고 차단: "+(adBlocker.isEnabled()?"켜짐":"꺼짐")+
+            "\n실제 서드파티 쿠키: "+(android.webkit.CookieManager.getInstance().acceptThirdPartyCookies(web)?"허용":"차단")+
+            "\n광고 차단 설정: "+(adBlocker.isEnabled()?"켜짐":"꺼짐")+
+            "\n현재 사이트 요청 차단: "+(adBlocker.isEnabled()&&!videoCompatibilityActive&&!adBlocker.isSiteAllowed(page)?"적용":"제외")+
             "\n영상 호환 모드: "+(isVideoCompatibilityEnabled(page)?"켜짐":"꺼짐")+
             "\n자동 이동 잠금: "+(isNavigationLockEnabled(page)?"켜짐":"꺼짐")+
             "\n서로 다른 호스트 자동 이동 차단: "+blockedPopupNavigations+"건"+
@@ -482,12 +524,16 @@ public class MainActivity extends Activity {
             .setNegativeButton("닫기",null).show();
     }
     private void runNetworkProbe(){
+        if(probeRunning){Toast.makeText(this,"이미 연결 검사 중입니다",Toast.LENGTH_SHORT).show();return;}
+        final String currentHost=siteHostname(web.getUrl());
+        if(currentHost.isEmpty()){Toast.makeText(this,"먼저 검사할 사이트를 열어주세요",Toast.LENGTH_SHORT).show();return;}
+        probeRunning=true;
         Toast.makeText(this,"운영체제 DNS 및 HTTPS 연결 검사 중…",Toast.LENGTH_LONG).show();
         new Thread(()->{
-            StringBuilder result=new StringBuilder("MediaShield 네트워크 직접 검사 (v11.3)\n");
+            StringBuilder result=new StringBuilder("MediaShield 네트워크 직접 검사 (v11.4)\n");
             result.append("이 검사는 WebView가 아닌 Android 네트워크 API를 사용합니다.\n")
-                  .append("HTTP 403·404도 연결에 성공했다는 의미일 수 있습니다.\n\n");
-            for(String host:new String[]{"njavtv.com","www.youtube.com"}){
+                  .append("사이트 루트의 HEAD 요청이며 실제 영상 재생 검사는 아닙니다.\nHTTP 403·404도 서버 응답이 도착했다는 의미입니다.\n\n");
+            for(String host:new String[]{currentHost}){
                 result.append(host).append("\n");
                 try{
                     InetAddress[] addresses=InetAddress.getAllByName(host);
@@ -507,18 +553,21 @@ public class MainActivity extends Activity {
                     result.append("  HTTPS: 응답 ").append(code).append("\n");
                 }catch(Exception e){
                     result.append("  HTTPS: 실패 · ").append(e.getClass().getSimpleName())
-                          .append(" · ").append(e.getMessage()==null?"설명 없음":e.getMessage()).append("\n");
+                          .append("\n");
                 }finally{if(connection!=null)connection.disconnect();}
                 result.append("\n");
             }
             String report=result.toString();
-            runOnUiThread(()->new AlertDialog.Builder(this).setTitle("직접 연결 검사 결과")
+            runOnUiThread(()->{
+                probeRunning=false;
+                if(isFinishing()||isDestroyed())return;
+                new AlertDialog.Builder(this).setTitle("직접 연결 검사 결과")
                 .setMessage(report)
                 .setPositiveButton("결과 복사",(d,w)->{
                     android.content.ClipboardManager cb=(android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
                     cb.setPrimaryClip(ClipData.newPlainText("MediaShield Network Test",report));
                     Toast.makeText(this,"검사 결과 복사 완료",Toast.LENGTH_SHORT).show();
-                }).setNegativeButton("닫기",null).show());
+                }).setNegativeButton("닫기",null).show();});
         },"MediaShieldNetworkProbe").start();
     }
     /** The UA toggle only changes identification: it is not a network bypass or another browser engine. */
@@ -539,8 +588,8 @@ public class MainActivity extends Activity {
         if(addressRow==null || browserChrome==null || root==null)return;
         ViewGroup parent=(ViewGroup)addressRow.getParent();
         if(parent!=null)parent.removeView(addressRow);
-        if(bottom)root.addView(addressRow,new LinearLayout.LayoutParams(-1,dp(60)));
-        else browserChrome.addView(addressRow,0,new LinearLayout.LayoutParams(-1,dp(60)));
+        if(bottom)root.addView(addressRow,new LinearLayout.LayoutParams(-1,dp(64)));
+        else browserChrome.addView(addressRow,0,new LinearLayout.LayoutParams(-1,dp(64)));
         addressRow.setContentDescription(bottom?"하단 주소창":"상단 주소창");
     }
     private void hideKeyboard(){
@@ -574,7 +623,7 @@ public class MainActivity extends Activity {
             .setMessage(explanation+"\n\n오류 원인을 확인하려면 아래 '진단 정보 복사'를 누르세요.")
             .setPositiveButton("진단 정보 복사",(d,w)->copyDiagnosticsReport())
             .setNeutralButton("DNS·HTTPS 검사",(d,w)->runNetworkProbe())
-            .setNegativeButton("Brave에서 열기",(d,w)->openExternalUrl(failedUrl)).show();
+            .setNegativeButton("다시 시도",(d,w)->navigateTo(failedUrl)).show();
     }
     private String installedBravePackage(){
         for(String candidate:new String[]{"com.brave.browser","com.brave.browser_beta","com.brave.browser_nightly"}){
@@ -618,8 +667,9 @@ public class MainActivity extends Activity {
     private void addNavButton(LinearLayout r,String label,Runnable click,int w){
         TextView b=text(label,23);b.setGravity(Gravity.CENTER);
         b.setTextColor(0xffdce2ee);b.setBackground(makeRounded(0xff242932,14));
-        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(w),dp(46));
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(w),dp(48));
         lp.setMargins(dp(3),0,dp(2),0);r.addView(b,lp);
+        describeButton(b,label);
         b.setOnClickListener(v->click.run());
     }
     private void bookmarkCurrent(){
@@ -638,7 +688,7 @@ public class MainActivity extends Activity {
         LinearLayout list=new LinearLayout(this);list.setOrientation(1);sv.addView(list);
         Set<String> links=getSharedPreferences("bookmarks",MODE_PRIVATE).getStringSet("urls",Collections.emptySet());
         for(String u:links){addButton(list,u,()->navigateTo(u));}
-        if(links.isEmpty())list.addView(text("  저장된 주소가 없습니다. 상단 ★ 버튼으로 추가할 수 있습니다.",13));
+        if(links.isEmpty())list.addView(text("  저장된 주소가 없습니다. 메뉴 → 현재 사이트 즐겨찾기로 추가하세요.",13));
     }
     private void clearPanels(){
         hideKeyboard();web.setVisibility(View.GONE);foundList.setVisibility(View.GONE);
@@ -663,19 +713,23 @@ public class MainActivity extends Activity {
     /** Collect direct <video>/<source>/<audio>/image URLs after navigation and in dynamic pages.
      * Returns only browser-accessible HTTP(S) URLs; blob: and DRM media are intentionally omitted.
      */
-    private void scanDomMedia(){
-        if(web==null || !liveScan)return;
+    private void scanDomMedia(){scanDomMedia(null);}
+    private void scanDomMedia(Runnable after){
+        if(web==null || !liveScan){if(after!=null)after.run();return;}
+        final int generation=pageGeneration;
         String js="(function(){var out=[];function add(v){if(v&&/^https?:\\/\\//i.test(v)&&out.indexOf(v)<0)out.push(v);}"+
             "document.querySelectorAll('video,video source,audio,audio source').forEach(function(e){add(e.currentSrc);add(e.src);});"+
             "Array.prototype.slice.call(document.querySelectorAll('img'),0,25).forEach(function(e){add(e.currentSrc||e.src);});"+
             "Array.prototype.slice.call(document.querySelectorAll('a[href]'),0,80).forEach(function(e){if(/\\.(mp4|webm|m4v|mov|m3u8|mp3|jpg|png|webp)(\\?|#|$)/i.test(e.href))add(e.href);});"+
             "return out.slice(0,120);})()";
         try{web.evaluateJavascript(js,json->{
+            if(generation!=pageGeneration)return;
             try{JSONArray arr=new JSONArray(json);for(int i=0;i<arr.length();i++){
                 String url=arr.optString(i);
                 if(TaskStore.validUrl(url)&&(looksLikeMedia(url)||i<30))addMedia(url);
             }}catch(Exception ignored){}
-        });}catch(Exception ignored){}
+            if(after!=null)after.run();
+        });}catch(Exception ignored){if(after!=null)after.run();}
     }
     private boolean isHls(String u){return u!=null && (u.matches("(?i).*\\.m3u8(?:[?#].*)?$") || u.matches("(?i).*[?&](?:format|ext|type)=m3u8(?:&.*)?$"));}
     private boolean isDash(String u){return u!=null&&u.matches("(?i).*\\.mpd(?:[?#].*)?$");}
@@ -690,9 +744,12 @@ public class MainActivity extends Activity {
     }
     private void showDownloadChooser(){
         // The toolbar button must begin a download flow, not only show completed tasks.
-        scanDomMedia();
+        scanDomMedia(this::displayDownloadChooser);
+    }
+    private void displayDownloadChooser(){
+        if(isFinishing()||isDestroyed())return;
         ArrayList<String> available=new ArrayList<>();
-        for(String url:media)if(isVideoFileCandidate(url))available.add(url);
+        for(String url:media)if(isVideoFileCandidate(url)&&!isDash(url)&&TaskStore.validDownloadUrl(url))available.add(url);
         if(available.isEmpty()){
             new AlertDialog.Builder(this).setTitle("영상 다운로드")
                 .setMessage("이 페이지에서 직접 저장 가능한 영상 주소를 찾지 못했습니다. 재생 버튼을 누른 후 다시 시도해 주세요. blob·DRM 영상은 지원하지 않습니다.")
@@ -715,9 +772,13 @@ public class MainActivity extends Activity {
             .setNegativeButton("취소",null).show();
     }
     private void showMedia(){clearPanels();foundList.setVisibility(View.VISIBLE);scanDomMedia();populateMedia();}
-    private void populateMedia(){foundList.removeAllViews();TextView hdr=text("  감지된 미디어 " + media.size()+"개 · HLS 화질 선택 / 라이브 TS 녹화 지원",15);hdr.setPadding(dp(10),dp(12),0,dp(12));foundList.addView(hdr);
+    private void populateMedia(){foundList.removeAllViews();TextView hdr=text("  감지된 미디어 " + media.size()+"개 · 재생 또는 저장 선택",15);hdr.setPadding(dp(10),dp(12),0,dp(12));foundList.addView(hdr);
         addButton(foundList,"브라우저로 돌아가기",this::showWeb);
         ScrollView scroll=new ScrollView(this);LinearLayout list=new LinearLayout(this);list.setOrientation(1);scroll.addView(list);foundList.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        if(media.isEmpty()){
+            TextView empty=text("아직 감지된 미디어가 없습니다.\n브라우저로 돌아가 영상을 재생한 뒤 다시 열어주세요.\nblob·DRM·다른 출처 iframe 영상은 감지되지 않을 수 있습니다.",14);
+            empty.setPadding(dp(16),dp(24),dp(16),dp(24));list.addView(empty);
+        }
         for(String u:new ArrayList<>(media)){
             LinearLayout item=row();
             String filename=Uri.parse(u).getLastPathSegment();
@@ -726,7 +787,7 @@ public class MainActivity extends Activity {
             item.addView(name,new LinearLayout.LayoutParams(0,dp(60),1));
             if(isDash(u))addButton(item,"DASH 미지원",()->Toast.makeText(this,"DASH(.mpd) 재생은 지원하지 않습니다",Toast.LENGTH_LONG).show());
             else if(isVideoFileCandidate(u))addButton(item,"앱내 재생",()->playNativeVideo(u));
-            addButton(item,isHls(u)?"HLS 받기":"다운로드",()->downloadMedia(u));
+            if(!isDash(u)&&TaskStore.validDownloadUrl(u))addButton(item,isHls(u)?"HLS 받기":"다운로드",()->downloadMedia(u));
             list.addView(item);
         }
     }
@@ -772,7 +833,7 @@ public class MainActivity extends Activity {
         playerView.setOnErrorListener((mp,what,extra)->{
             new AlertDialog.Builder(this).setTitle("영상 재생 실패")
                 .setMessage("스트림 형식이나 영상 서버 정책으로 인해 기본 Android 플레이어에서 재생할 수 없습니다. "+
-                    "blob 기반·DRM 영상은 지원하지 않습니다.\n오류: "+what+" / "+extra)
+                    "로그인이 필요한 영상은 웹에서 재생해 주세요. blob·DRM 영상은 지원하지 않습니다.\n오류: "+what+" / "+extra)
                 .setPositiveButton("확인",null).show();
             return true;
         });
@@ -784,12 +845,8 @@ public class MainActivity extends Activity {
         playerPane.addView(buttons,new LinearLayout.LayoutParams(-1,dp(55)));
         HashMap<String,String> headers=new HashMap<>();
         headers.put("User-Agent",web.getSettings().getUserAgentString());
-        String referer=web.getUrl();
-        if(TaskStore.validUrl(referer))headers.put("Referer",referer);
-        if(siteHostname(url).equals(siteHostname(referer))){
-            String cookie=android.webkit.CookieManager.getInstance().getCookie(url);
-            if(cookie!=null&&!cookie.isEmpty())headers.put("Cookie",cookie);
-        }
+        // Native VideoView can follow redirects internally; do not attach cookies or private page URLs.
+
         playerView.setVideoURI(Uri.parse(url),headers);
         playerView.requestFocus();
         playerView.start();
@@ -843,7 +900,7 @@ public class MainActivity extends Activity {
         if(id==null)return;Intent svc=new Intent(this,DownloadService.class).setAction(DownloadService.ACTION_ENQUEUE).putExtra(DownloadService.EXTRA_ID,id);
         try{startForegroundService(svc);Toast.makeText(this,"다운로드 대기열에 추가",Toast.LENGTH_SHORT).show();}catch(Exception e){TaskStore.patch(this,id,"status","failed");Toast.makeText(this,"다운로드 시작 실패: "+e.getMessage(),Toast.LENGTH_LONG).show();}}
     private void showDownloads(){clearPanels();downloadsList.setVisibility(View.VISIBLE);populateDownloads();}
-    private void action(String act,String id){Intent svc=new Intent(this,DownloadService.class).setAction(act).putExtra(DownloadService.EXTRA_ID,id);try{startForegroundService(svc);}catch(Exception e){Toast.makeText(this,e.toString(),Toast.LENGTH_LONG).show();}populateDownloads();}
+    private void action(String act,String id){Intent svc=new Intent(this,DownloadService.class).setAction(act).putExtra(DownloadService.EXTRA_ID,id);try{startForegroundService(svc);}catch(Exception e){Toast.makeText(this,e.toString(),Toast.LENGTH_LONG).show();}refreshDownloadItems();}
     private void populateDownloads(){downloadsList.removeAllViews();TextView hdr=text("  다운로드 대기열 · 일시정지 / 재개 / 취소",15);hdr.setPadding(dp(8),dp(12),0,dp(12));downloadsList.addView(hdr);
         EditText direct=field("파일 주소 또는 HLS(.m3u8) 붙여넣기");
         direct.setText(typedDirectUrl);directInputBox=direct;
@@ -858,10 +915,34 @@ public class MainActivity extends Activity {
             fastDownloads=checked;getSharedPreferences("download_settings",MODE_PRIVATE).edit().putBoolean("fast",checked).apply();
         });downloadsList.addView(fast);
         addButton(downloadsList,"브라우저로 돌아가기",this::showWeb);
-        ScrollView scroll=new ScrollView(this);LinearLayout list=new LinearLayout(this);list.setOrientation(1);scroll.addView(list);downloadsList.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));JSONArray data=TaskStore.all(this);
+        ScrollView scroll=new ScrollView(this);downloadItems=new LinearLayout(this);downloadItems.setOrientation(1);
+        scroll.addView(downloadItems);downloadsList.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        downloadSnapshot="";refreshDownloadItems();
+    }
+    private String downloadState(String state){
+        switch(state){
+            case "queued":return "대기 중";case "downloading":return "다운로드 중";
+            case "paused":return "일시정지";case "failed":return "실패";
+            case "completed":return "저장 완료";case "canceled":return "취소됨";
+            case "finishing":return "저장 마무리 중";default:return state;
+        }
+    }
+    private void refreshDownloadItems(){
+        if(downloadItems==null)return;
+        JSONArray data=TaskStore.all(this);
+        String snapshot=data.toString();if(snapshot.equals(downloadSnapshot))return;
+        downloadSnapshot=snapshot;
+        LinearLayout list=downloadItems;
+        ScrollView scroll=(ScrollView)list.getParent();
+        int scrollY=scroll.getScrollY();list.removeAllViews();
+        if(data.length()==0){
+            TextView empty=text("아직 다운로드가 없습니다.\n웹에서 영상을 재생한 뒤 주소창의 ↓를 누르세요.\n직접 HTTPS 파일 주소도 입력할 수 있습니다.",14);
+            empty.setPadding(dp(16),dp(24),dp(16),dp(24));list.addView(empty);
+        }
+        scroll.post(()->scroll.scrollTo(0,scrollY));
         for(int i=data.length()-1;i>=0;i--){JSONObject t=data.optJSONObject(i);if(t==null)continue;String id=t.optString("id"),state=t.optString("status");long done=t.optLong("done"),total=t.optLong("total",-1);int pct=total>0?(int)Math.min(100,done*100/total):-1;
             String speed=t.optLong("speed")>0?" · "+(t.optLong("speed")/1024)+" KB/s":"";
-            TextView label=text(t.optString("name")+"\n"+state+" · "+(pct>=0?pct+"%":done/1024+" KB")+speed+("failed".equals(state)?" · "+t.optString("error"):""),12);label.setPadding(dp(10),dp(10),dp(10),dp(6));list.addView(label);
+            TextView label=text(t.optString("name")+"\n"+downloadState(state)+" · "+(pct>=0?pct+"%":done/1024+" KB")+speed+("failed".equals(state)?" · "+t.optString("error"):""),12);label.setPadding(dp(10),dp(10),dp(10),dp(6));list.addView(label);
             LinearLayout buttons=row();if("downloading".equals(state)||"queued".equals(state))addButton(buttons,"일시정지",()->action(DownloadService.ACTION_PAUSE,id));
             if("paused".equals(state)||"failed".equals(state))addButton(buttons,"재개",()->action(DownloadService.ACTION_RESUME,id));
             if("hls".equals(t.optString("kind")) && "downloading".equals(state))addButton(buttons,"녹화 종료·저장",()->action(DownloadService.ACTION_FINISH,id));
@@ -869,7 +950,7 @@ public class MainActivity extends Activity {
         }
     }
     private void tick(){
-        if(refresh && downloadsList!=null && downloadsList.getVisibility()==View.VISIBLE && (directInputBox==null || !directInputBox.hasFocus()))populateDownloads();
+        if(refresh && downloadsList!=null && downloadsList.getVisibility()==View.VISIBLE)refreshDownloadItems();
         if(refresh && web!=null && web.getVisibility()==View.VISIBLE && ++scanTick%4==0)scanDomMedia();
         if(refresh)handler.postDelayed(this::tick,1100);
     }
@@ -928,6 +1009,6 @@ public class MainActivity extends Activity {
     }
     private EditText field(String hint){EditText e=new EditText(this);e.setTextColor(Color.WHITE);e.setHintTextColor(0xffa5b2c1);e.setHint(hint);e.setSingleLine(true);return e;}
     @Override public void onBackPressed(){if(customVideoView!=null){hideVideoFullscreen();return;}if(playerPane.getVisibility()==View.VISIBLE){stopNativeVideo();showWeb();return;}if(web.getVisibility()!=View.VISIBLE){showWeb();return;}if(web.canGoBack()){web.goBack();return;}super.onBackPressed();}
-    @Override protected void onSaveInstanceState(Bundle out){web.saveState(out);super.onSaveInstanceState(out);}
+    @Override protected void onSaveInstanceState(Bundle out){out.putString("direct_url",typedDirectUrl);web.saveState(out);super.onSaveInstanceState(out);}
     @Override protected void onDestroy(){stopNativeVideo();hideVideoFullscreen();refresh=false;handler.removeCallbacksAndMessages(null);if(web!=null){web.destroy();}if(adBlocker!=null)adBlocker.close();super.onDestroy();}
 }
