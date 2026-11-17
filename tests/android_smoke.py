@@ -14,6 +14,8 @@ def wait_for(predicate, seconds=25):
                 if predicate(node): return node
         except (ET.ParseError, subprocess.CalledProcessError): pass
         time.sleep(1)
+    print(adb("shell","cat","/sdcard/window.xml"), flush=True)
+    print(adb("logcat","-d","-s","AndroidRuntime:E"), flush=True)
     raise AssertionError("Expected UI element not found")
 def click(node):
     x1,y1,x2,y2=map(int,re.findall(r"\d+",node.attrib["bounds"]))
@@ -23,7 +25,7 @@ def desc_is(value): return lambda n:n.get("content-desc")==value
 adb("install","-r","app/build/outputs/apk/debug/app-debug.apk")
 adb("shell","pm","grant",PKG,"android.permission.POST_NOTIFICATIONS")
 adb("logcat","-c")
-adb("shell","am","start","-W","-n",PKG+"/com.example.bravemediasaver.MainActivity")
+print(adb("shell","am","start","-W","-n",PKG+"/com.example.bravemediasaver.MainActivity"), flush=True)
 click(wait_for(desc_is("메뉴")))
 for label in ["영상 다운로드","다운로드 목록","감지된 미디어","연결 진단 · DNS 검사","고급 설정"]:
     wait_for(text_is(label))
