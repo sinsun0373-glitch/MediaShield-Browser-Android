@@ -8,8 +8,8 @@ android {
         applicationId 'com.example.privacymediabrowser'
         minSdk 30
         targetSdk 35
-        versionCode 21
-        versionName '11.3.0-personal'
+        versionCode 22
+        versionName '11.4.0-personal'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
