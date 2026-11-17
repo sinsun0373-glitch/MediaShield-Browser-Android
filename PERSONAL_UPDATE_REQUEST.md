@@ -1,14 +1,14 @@
-# MediaShield v11.3 personal signed update
+# MediaShield v11.4 personal signed update
 
-User reports that the DNS/HTTPS direct test was not visible in the v11.2 diagnostic window.
-Verified actual MainActivity.java: the test handler runNetworkProbe was only connected to a neutral AlertDialog button, not a direct top-level menu option.
-
-Changes in v11.3:
-- Add direct top-level menu item "DNS·HTTPS 직접 검사" immediately after "영상 연결 진단"; verifies switch indices 0–15 are unique and aligned with 16 menu options.
-- Also expose DNS/HTTPS test in the main connection-error dialog as its neutral button, replacing redundant retry (refresh remains available in browser).
-- Shorten the diagnostic dialog neutral button label to "네트워크 검사" to reduce narrow-screen button crowding.
-- Bump report and network probe labels to v11.3.
-- Preserve internal WebView navigation, native player functionality and personal signing identity.
-- GitHub CI compile, JVM tests, security checks, APK inspection and debug signing checks passed in run 43738479942.
-- Does not solve the upstream ERR_CONNECTION_RESET or YouTube in-stream ads. Android UI on user's device still requires testing.
-- Existing personal encrypted signing key from 43712038023; do not generate a new identity. Not Google Play Protect certified.
+- Keep application ID and the existing encrypted personal signing key from run 43712038023.
+- Eight-item primary menu; labeled bottom actions and accessible button descriptions.
+- Handle system bars, display cutout and keyboard insets for Android 15+.
+- Keep download address input mounted while queue rows update; preserve its value across rotation.
+- Korean queue states, empty states, internal retry from connection errors.
+- Await DOM detection before presenting downloadable videos; exclude unsupported DASH.
+- Reset diagnostic errors per navigation; report effective third-party cookies and request blocking.
+- Probe only the current site, reject duplicate probes, suppress results after Activity destruction.
+- Report navigation hosts without paths; native VideoView no longer receives cookies or private referer headers that could follow redirects.
+- Keep all automatic browsing internal. No TLS bypass or replacement signing keys.
+- Run existing JVM core/security checks, APK signature verification and Android 35 emulator UX smoke checks.
+- ERR_CONNECTION_RESET, YouTube in-stream ads and Galaxy S23 playback remain device-validation items.
