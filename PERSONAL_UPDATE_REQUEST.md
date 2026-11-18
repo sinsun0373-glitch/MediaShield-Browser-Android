@@ -1,14 +1,14 @@
-# MediaShield v11.4 personal signed update
+# MediaShield v11.5 internal compatibility engine
 
-- Keep application ID and the existing encrypted personal signing key from run 43712038023.
-- Eight-item primary menu; labeled bottom actions and accessible button descriptions.
-- Handle system bars, display cutout and keyboard insets for Android 15+.
-- Keep download address input mounted while queue rows update; preserve its value across rotation.
-- Korean queue states, empty states, internal retry from connection errors.
-- Await DOM detection before presenting downloadable videos; exclude unsupported DASH.
-- Reset diagnostic errors per navigation; report effective third-party cookies and request blocking.
-- Probe only the current site, reject duplicate probes, suppress results after Activity destruction.
-- Report navigation hosts without paths; native VideoView no longer receives cookies or private referer headers that could follow redirects.
-- Keep all automatic browsing internal. No TLS bypass or replacement signing keys.
-- Run existing JVM core/security checks, APK signature verification and Android 35 emulator UX smoke checks.
-- ERR_CONNECTION_RESET, YouTube in-stream ads and Galaxy S23 playback remain device-validation items.
+User reports: WebView ERR_CONNECTION_RESET, Android root HEAD SocketException, but Brave works on the same device/network. Root cause is not confirmed.
+
+- Add an explicit in-app GeckoView 160.0.20261116130455 compatibility Activity; no external browser handoff.
+- Error screen and main menu provide an internal-engine action. HTTPS only; normal certificate validation; popup/external scheme guards.
+- Separate Gecko cookies and default tracking protection. Existing WebView filters and download detection do not apply to Gecko; explain this before opening.
+- Gecko engine is browsing/playback-only in this iteration. Keep existing WebView downloads unchanged.
+- Add combined WebView + DNS + HEAD/GET diagnostics with classified errors; do not log private URL paths/cookies.
+- Compile with SDK 37.2, AGP 9.4.0, Gradle 9.6.0 to match current Gecko dependencies; retain targetSdk 35 and minSdk 30.
+- Release arm64-v8a for the user's Galaxy S23; debug x86_64 for emulator tests.
+- Test navigation policy, existing downloader core, APK signatures, Android emulator UI including HTTPS loading in Gecko.
+- Preserve the existing signing key backup from run 43712038023.
+- Not Play Protect approved. Actual problematic-site playback remains unverified until tested on the user's device.
