@@ -2,14 +2,14 @@ plugins { id 'com.android.application' }
 
 android {
     namespace 'com.example.bravemediasaver'
-    compileSdk 35
+    compileSdk { version = release(37) { minorApiLevel = 2 } }
 
     defaultConfig {
         applicationId 'com.example.privacymediabrowser'
         minSdk 30
         targetSdk 35
-        versionCode 22
-        versionName '11.4.0-personal'
+        versionCode 23
+        versionName '11.5.0-personal'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
@@ -37,9 +37,11 @@ android {
         }
     }
     buildTypes {
+        debug { ndk { abiFilters "x86_64" } }
         release {
             minifyEnabled false
             debuggable false
+            ndk { abiFilters "arm64-v8a" }
             if (signingReady) {
                 signingConfig signingConfigs.personalRelease
             }
@@ -47,3 +49,5 @@ android {
     }
 }
 
+
+dependencies { implementation "org.mozilla.geckoview:geckoview:160.0.20261116130455" }
