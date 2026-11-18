@@ -21,10 +21,10 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v4
-      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - run: sdkmanager 'platforms;android-37.2' 'build-tools;36.0.0'
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle-version: '9.6.0'
 
       - name: Restore existing encrypted signing key backup
         uses: actions/download-artifact@v4
@@ -68,8 +68,8 @@ jobs:
           set -euo pipefail
           APK=app/build/outputs/apk/release/app-release.apk
           unzip -t "$APK" | tail -n 2
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump permissions "$APK"
           sha256sum "$APK" > "$APK.sha256"
           echo "Not Play Protect approved. WebView compatibility and ad blocking require device testing."
 
