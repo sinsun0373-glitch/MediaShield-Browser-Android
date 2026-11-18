@@ -26,6 +26,7 @@ public final class CompatibilityActivity extends Activity {
     private String current = "", error = "없음";
     private boolean canBack, fullscreen, loadOk, lock = true;
     private int blocked;
+    private boolean crashed;
 
     private int dp(int n) { return Math.round(n * getResources().getDisplayMetrics().density); }
     private TextView label(String value, int size) {
@@ -72,7 +73,10 @@ public final class CompatibilityActivity extends Activity {
         view = new GeckoView(this); root.addView(view,new LinearLayout.LayoutParams(-1,0,1));
         LinearLayout bar = new LinearLayout(this);
         button(bar,"뒤로",this::goBack);
-        button(bar,"새로고침",()->session.reload());
+        button(bar,"새로고침",()->{
+            if(crashed){session.open(runtime);crashed=false;session.loadUri(current);}
+            else session.reload();
+        });
         button(bar,"설정·진단",this::showTools);
         button(bar,"기본 화면",this::finish);
         root.addView(bar);
@@ -114,7 +118,8 @@ public final class CompatibilityActivity extends Activity {
         });
         session.setProgressDelegate(new GeckoSession.ProgressDelegate() {
             @Override public void onPageStart(GeckoSession s,String url) {
-                loadOk = false; error = "없음"; state.setText("호환 엔진 연결 중…");
+                if(CompatibilityPolicy.host(url).isEmpty())return;
+                current=url;loadOk = false; error = "없음"; state.setText("호환 엔진 연결 중…");
                 progress.setProgress(0);progress.setVisibility(View.VISIBLE);
             }
             @Override public void onProgressChange(GeckoSession s,int value) { progress.setProgress(value); }
@@ -137,7 +142,7 @@ public final class CompatibilityActivity extends Activity {
                 Toast.makeText(CompatibilityActivity.this,"이 호환 화면은 재생용입니다. 다운로드는 기본 화면에서 이용해 주세요.",Toast.LENGTH_LONG).show();
             }
             @Override public void onCrash(GeckoSession s) {
-                error="콘텐츠 프로세스 종료";state.setText("엔진이 종료되었습니다. 기본 화면으로 돌아가 다시 열어주세요.");
+                crashed=true;loadOk=false;error="콘텐츠 프로세스 종료";state.setText("엔진이 종료되었습니다. 새로고침으로 다시 열어주세요.");
             }
         });
         session.setMediaSessionDelegate(new MediaSession.Delegate(){
