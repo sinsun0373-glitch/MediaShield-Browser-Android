@@ -12,3 +12,5 @@ User reports: WebView ERR_CONNECTION_RESET, Android root HEAD SocketException, b
 - Test navigation policy, existing downloader core, APK signatures, Android emulator UI including HTTPS loading in Gecko.
 - Preserve the existing signing key backup from run 43712038023.
 - Not Play Protect approved. Actual problematic-site playback remains unverified until tested on the user's device.
+
+Final validation: preserve error-page failure state and reopen the Gecko session after a content-process crash. Rebuild both signed release and emulator-tested debug from the final source.
