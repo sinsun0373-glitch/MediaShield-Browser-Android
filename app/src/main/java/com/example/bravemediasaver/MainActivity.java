@@ -325,7 +325,7 @@ public class MainActivity extends Activity {
         if(TaskStore.validUrl(url))openExternalUrl(url);
     }
     private void showBrowserMenu(){
-        String[] actions={"영상 다운로드","다운로드 목록","감지된 미디어","현재 사이트 즐겨찾기","즐겨찾기 목록","광고 차단 설정","연결 진단 · DNS 검사","고급 설정"};
+        String[] actions={"영상 다운로드","다운로드 목록","감지된 미디어","현재 사이트 즐겨찾기","즐겨찾기 목록","광고 차단 설정","연결 진단 · DNS 검사","고급 설정","내부 호환 엔진으로 열기"};
         new AlertDialog.Builder(this).setTitle("MediaShield")
             .setItems(actions,(d,which)->{
                 switch(which){
@@ -333,6 +333,7 @@ public class MainActivity extends Activity {
                     case 2:showMedia();break;case 3:bookmarkCurrent();break;
                     case 4:showBookmarks();break;case 5:showAdblock();break;
                     case 6:showMediaConnectionDiagnostics();break;case 7:showAdvancedMenu();break;
+                    case 8:openCompatibilityEngine(web.getUrl());break;
                 }
             }).setNegativeButton("닫기",null).show();
     }
@@ -368,6 +369,17 @@ public class MainActivity extends Activity {
                 case 15:showMediaEngineSetting();break;
             }
         }).show();
+    }
+    private void openCompatibilityEngine(String url){
+        if(CompatibilityPolicy.host(url).isEmpty()){
+            Toast.makeText(this,"HTTPS 페이지에서 이용해 주세요",Toast.LENGTH_SHORT).show();return;
+        }
+        new AlertDialog.Builder(this).setTitle("내부 호환 엔진으로 열기")
+            .setMessage("WebView 대신 앱에 포함된 Gecko 엔진으로 이 페이지를 엽니다. 외부 앱으로 이동하지 않습니다. 로그인은 별도이며 이 화면의 미디어 감지·다운로드는 아직 지원하지 않습니다.")
+            .setPositiveButton("호환 엔진 시작",(d,w)->{
+                web.stopLoading();
+                startActivity(new Intent(this,CompatibilityActivity.class).putExtra(CompatibilityActivity.EXTRA_URL,url));
+            }).setNegativeButton("취소",null).show();
     }
     private void navigateTo(String url){
         if(!TaskStore.validUrl(url))return;
@@ -485,7 +497,7 @@ public class MainActivity extends Activity {
         android.content.pm.PackageInfo pkg=android.webkit.WebView.getCurrentWebViewPackage();
         String engineVersion=pkg==null?"알 수 없음":pkg.versionName;
         String lastFailedHost=siteHostname(lastFailedUrl);
-        return "MediaShield 연결 진단 (v11.4 · 현재 페이지 기준)"+
+        return "MediaShield 연결 진단 (v11.5 · 현재 페이지 기준)"+
             "\n영상 사이트 실행 엔진: MediaShield WebView"+
             "\nBrave 패키지 확인: "+(installedBravePackage()==null?"설치 여부 미확인":installedBravePackage())+
             "\n현재 페이지: "+(pageHost.isEmpty()?"없음":pageHost)+
@@ -523,16 +535,29 @@ public class MainActivity extends Activity {
             .setNeutralButton("네트워크 검사",(d,w)->runNetworkProbe())
             .setNegativeButton("닫기",null).show();
     }
+    private String connectionFailureKind(Exception failure){
+        // Classify known messages only. Never copy raw exception URLs or tokens.
+        String value=String.valueOf(failure.getMessage()).toLowerCase(Locale.ROOT);
+        if(value.contains("reset"))return "연결 재설정";
+        if(value.contains("refused"))return "연결 거부";
+        if(value.contains("timed out")||failure instanceof java.net.SocketTimeoutException)return "시간 초과";
+        if(failure instanceof javax.net.ssl.SSLException)return "TLS 협상 또는 인증서 오류";
+        if(failure instanceof java.net.UnknownHostException)return "주소 확인 실패";
+        if(value.contains("unreachable"))return "대상에 도달하지 못함";
+        return "미분류 연결 오류";
+    }
     private void runNetworkProbe(){
         if(probeRunning){Toast.makeText(this,"이미 연결 검사 중입니다",Toast.LENGTH_SHORT).show();return;}
         final String currentHost=siteHostname(web.getUrl());
+        final String diagnostics=buildDiagnosticsReport();
+        final String agent=web.getSettings().getUserAgentString();
         if(currentHost.isEmpty()){Toast.makeText(this,"먼저 검사할 사이트를 열어주세요",Toast.LENGTH_SHORT).show();return;}
         probeRunning=true;
         Toast.makeText(this,"운영체제 DNS 및 HTTPS 연결 검사 중…",Toast.LENGTH_LONG).show();
         new Thread(()->{
-            StringBuilder result=new StringBuilder("MediaShield 네트워크 직접 검사 (v11.4)\n");
+            StringBuilder result=new StringBuilder(diagnostics+"\n\nMediaShield 네트워크 직접 검사 (v11.5)\n");
             result.append("이 검사는 WebView가 아닌 Android 네트워크 API를 사용합니다.\n")
-                  .append("사이트 루트의 HEAD 요청이며 실제 영상 재생 검사는 아닙니다.\nHTTP 403·404도 서버 응답이 도착했다는 의미입니다.\n\n");
+                  .append("사이트 루트의 HEAD·GET 비교이며 실제 영상 재생 검사는 아닙니다.\nHTTP 403·404도 서버 응답이 도착했다는 의미입니다.\n\n");
             for(String host:new String[]{currentHost}){
                 result.append(host).append("\n");
                 try{
@@ -541,20 +566,26 @@ public class MainActivity extends Activity {
                 }catch(Exception e){
                     result.append("  DNS: 실패 · ").append(e.getClass().getSimpleName()).append("\n");
                 }
+                for(String method:new String[]{"HEAD","GET"}){
                 HttpsURLConnection connection=null;
+                long started=android.os.SystemClock.elapsedRealtime();
                 try{
                     URL url=new URL("https://"+host+"/");
                     connection=(HttpsURLConnection)url.openConnection();
-                    connection.setRequestMethod("HEAD");
+                    connection.setRequestMethod(method);
+                    connection.setRequestProperty("User-Agent",agent);
+                    connection.setRequestProperty("Accept","text/html,application/xhtml+xml,*/*;q=0.8");
                     connection.setConnectTimeout(6000);
                     connection.setReadTimeout(6000);
                     connection.setInstanceFollowRedirects(false);
                     int code=connection.getResponseCode();
-                    result.append("  HTTPS: 응답 ").append(code).append("\n");
+                    result.append("  HTTPS ").append(method).append(": 응답 ").append(code).append("\n");
                 }catch(Exception e){
-                    result.append("  HTTPS: 실패 · ").append(e.getClass().getSimpleName())
-                          .append("\n");
+                    result.append("  HTTPS ").append(method).append(": 실패 · ").append(e.getClass().getSimpleName())
+                          .append(" · ").append(connectionFailureKind(e)).append("\n");
                 }finally{if(connection!=null)connection.disconnect();}
+                result.append("  소요: ").append(android.os.SystemClock.elapsedRealtime()-started).append("ms\n");
+                }
                 result.append("\n");
             }
             String report=result.toString();
@@ -620,9 +651,9 @@ public class MainActivity extends Activity {
         String explanation="연결 오류 " + code + " · " + detail + "\n\n사이트: " + host +
             "\n\n연결 재설정은 서버, 통신망, DNS 또는 사이트 정책에서 발생할 수 있습니다. 광고 차단을 꺼도 해결되지 않을 수 있습니다. SSL 인증서 오류는 우회하지 않습니다.";
         new AlertDialog.Builder(this).setTitle("사이트 연결 실패")
-            .setMessage(explanation+"\n\n오류 원인을 확인하려면 아래 '진단 정보 복사'를 누르세요.")
-            .setPositiveButton("진단 정보 복사",(d,w)->copyDiagnosticsReport())
-            .setNeutralButton("DNS·HTTPS 검사",(d,w)->runNetworkProbe())
+            .setMessage(explanation+"\n\n호환 엔진으로 같은 페이지를 앱 안에서 다시 열 수 있습니다.")
+            .setPositiveButton("호환 엔진으로 열기",(d,w)->openCompatibilityEngine(failedUrl))
+            .setNeutralButton("통합 연결 검사",(d,w)->runNetworkProbe())
             .setNegativeButton("다시 시도",(d,w)->navigateTo(failedUrl)).show();
     }
     private String installedBravePackage(){
